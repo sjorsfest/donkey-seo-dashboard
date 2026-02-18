@@ -14,8 +14,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Register
-         * @description Register a new user account.
+         * Register user
+         * @description Create a local user account and return the created user profile.
          */
         post: operations["register_api_v1_auth_register_post"];
         delete?: never;
@@ -34,8 +34,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Login
-         * @description Login and get access/refresh tokens.
+         * Login user
+         * @description Authenticate with email and password, then return access and refresh JWT tokens.
          */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
@@ -54,8 +54,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Refresh Token
-         * @description Refresh access token using refresh token.
+         * Refresh tokens
+         * @description Validate a refresh token and issue a new access and refresh JWT token pair.
          */
         post: operations["refresh_token_api_v1_auth_refresh_post"];
         delete?: never;
@@ -72,10 +72,90 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Current User Info
-         * @description Get current user information.
+         * Get current user
+         * @description Return the authenticated user's profile derived from the bearer access token.
          */
         get: operations["get_current_user_info_api_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/google/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start Google OAuth
+         * @description Validate the frontend redirect URI and redirect the browser to Google's OAuth consent screen.
+         */
+        get: operations["oauth_google_start_api_v1_auth_oauth_google_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/twitter/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start Twitter OAuth
+         * @description Validate the frontend redirect URI and redirect the browser to Twitter's OAuth consent screen.
+         */
+        get: operations["oauth_twitter_start_api_v1_auth_oauth_twitter_start_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/google/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Handle Google OAuth callback
+         * @description Exchange the Google authorization code, sign in or create a local user, then redirect to the frontend with issued JWT tokens.
+         */
+        get: operations["oauth_google_callback_api_v1_auth_oauth_google_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/twitter/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Handle Twitter OAuth callback
+         * @description Exchange the Twitter authorization code, sign in or create a local user, then redirect to the frontend with issued JWT tokens.
+         */
+        get: operations["oauth_twitter_callback_api_v1_auth_oauth_twitter_callback_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -92,14 +172,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Projects
-         * @description List all projects for the current user.
+         * List projects
+         * @description Return paginated projects for the authenticated user, ordered by most recent.
          */
         get: operations["list_projects_api_v1_projects__get"];
         put?: never;
         /**
-         * Create Project
-         * @description Create a new keyword research project.
+         * Create project
+         * @description Create a keyword research project with domain, locale, goals, and optional pipeline settings.
          */
         post: operations["create_project_api_v1_projects__post"];
         delete?: never;
@@ -116,19 +196,19 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Project
-         * @description Get a specific project by ID.
+         * Get project
+         * @description Return a single project by ID when it belongs to the authenticated user.
          */
         get: operations["get_project_api_v1_projects__project_id__get"];
         /**
-         * Update Project
-         * @description Update a project.
+         * Update project
+         * @description Apply partial updates to editable fields on an existing project.
          */
         put: operations["update_project_api_v1_projects__project_id__put"];
         post?: never;
         /**
-         * Delete Project
-         * @description Delete a project.
+         * Delete project
+         * @description Delete a project owned by the authenticated user.
          */
         delete: operations["delete_project_api_v1_projects__project_id__delete"];
         options?: never;
@@ -146,8 +226,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Start Pipeline
-         * @description Start a new pipeline run for a project.
+         * Start pipeline run
+         * @description Create a new pipeline run for a project and queue background execution for the requested step range.
          */
         post: operations["start_pipeline_api_v1_pipeline__project_id__start_post"];
         delete?: never;
@@ -164,8 +244,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Pipeline Runs
-         * @description List pipeline runs for a project.
+         * List pipeline runs
+         * @description Return recent pipeline runs for a project, including step execution data, limited by the provided count.
          */
         get: operations["list_pipeline_runs_api_v1_pipeline__project_id__runs_get"];
         put?: never;
@@ -184,8 +264,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Pipeline Run
-         * @description Get a specific pipeline run.
+         * Get pipeline run
+         * @description Return full details for a specific pipeline run in the project.
          */
         get: operations["get_pipeline_run_api_v1_pipeline__project_id__runs__run_id__get"];
         put?: never;
@@ -204,10 +284,30 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Pipeline Progress
-         * @description Get real-time progress for a pipeline run.
+         * Get pipeline progress
+         * @description Return real-time pipeline progress including run status, active step, and per-step execution details.
          */
         get: operations["get_pipeline_progress_api_v1_pipeline__project_id__runs__run_id__progress_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pipeline/{project_id}/runs/{run_id}/discovery-snapshots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List discovery snapshots
+         * @description Return per-iteration topic decision snapshots (accepted/rejected) for a discovery-loop run.
+         */
+        get: operations["list_discovery_snapshots_api_v1_pipeline__project_id__runs__run_id__discovery_snapshots_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -226,8 +326,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Pause Pipeline
-         * @description Pause a running pipeline.
+         * Pause running pipeline
+         * @description Pause the currently running pipeline run for the project.
          */
         post: operations["pause_pipeline_api_v1_pipeline__project_id__pause_post"];
         delete?: never;
@@ -236,7 +336,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/pipeline/{project_id}/resume": {
+    "/api/v1/pipeline/{project_id}/resume/{run_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -246,10 +346,30 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Resume Pipeline
-         * @description Resume a paused pipeline.
+         * Resume paused pipeline
+         * @description Queue background work to resume a paused pipeline run.
          */
-        post: operations["resume_pipeline_api_v1_pipeline__project_id__resume_post"];
+        post: operations["resume_pipeline_api_v1_pipeline__project_id__resume__run_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get task status
+         * @description Return asynchronous task status and payload from Redis by task ID.
+         */
+        get: operations["get_task_status_api_v1_tasks__task_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -264,14 +384,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Keywords
-         * @description List keywords for a project with filters.
+         * List keywords
+         * @description Return paginated keywords for a project with optional filters for intent, status, topic, volume, difficulty, and text search.
          */
         get: operations["list_keywords_api_v1_keywords__project_id__get"];
         put?: never;
         /**
-         * Create Keyword
-         * @description Manually add a keyword to a project.
+         * Create keyword
+         * @description Add a new keyword manually to the project.
          */
         post: operations["create_keyword_api_v1_keywords__project_id__post"];
         delete?: never;
@@ -288,19 +408,19 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Keyword
-         * @description Get detailed keyword information.
+         * Get keyword
+         * @description Return detailed information for a single keyword in the project.
          */
         get: operations["get_keyword_api_v1_keywords__project_id___keyword_id__get"];
         /**
-         * Update Keyword
-         * @description Update a keyword.
+         * Update keyword
+         * @description Apply partial updates to an existing keyword in the project.
          */
         put: operations["update_keyword_api_v1_keywords__project_id___keyword_id__put"];
         post?: never;
         /**
-         * Delete Keyword
-         * @description Delete (exclude) a keyword.
+         * Exclude keyword
+         * @description Soft-delete a keyword by marking its status as excluded.
          */
         delete: operations["delete_keyword_api_v1_keywords__project_id___keyword_id__delete"];
         options?: never;
@@ -318,8 +438,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Bulk Update Keywords
-         * @description Bulk update keywords.
+         * Bulk update keywords
+         * @description Update status, intent, or topic assignment for multiple keywords in one request.
          */
         post: operations["bulk_update_keywords_api_v1_keywords__project_id__bulk_update_post"];
         delete?: never;
@@ -336,14 +456,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Topics
-         * @description List topics for a project.
+         * List topics
+         * @description Return paginated topics for a project, with optional eligibility filtering based on fit tier.
          */
         get: operations["list_topics_api_v1_topics__project_id__get"];
         put?: never;
         /**
-         * Create Topic
-         * @description Create a new topic.
+         * Create topic
+         * @description Create a topic within a project, optionally linked to a parent topic.
          */
         post: operations["create_topic_api_v1_topics__project_id__post"];
         delete?: never;
@@ -360,8 +480,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Ranked Topics
-         * @description Get prioritized topic backlog.
+         * List ranked topics
+         * @description Return prioritized topics for a project ordered by priority rank.
          */
         get: operations["get_ranked_topics_api_v1_topics__project_id__ranked_get"];
         put?: never;
@@ -380,8 +500,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Topic Hierarchy
-         * @description Get topic hierarchy tree.
+         * Get topic hierarchy
+         * @description Return the project topic tree with nested parent-child relationships.
          */
         get: operations["get_topic_hierarchy_api_v1_topics__project_id__hierarchy_get"];
         put?: never;
@@ -400,19 +520,19 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Topic
-         * @description Get detailed topic information.
+         * Get topic
+         * @description Return detailed information for a single topic.
          */
         get: operations["get_topic_api_v1_topics__project_id___topic_id__get"];
         /**
-         * Update Topic
-         * @description Update a topic.
+         * Update topic
+         * @description Apply partial updates to an existing topic.
          */
         put: operations["update_topic_api_v1_topics__project_id___topic_id__put"];
         post?: never;
         /**
-         * Delete Topic
-         * @description Delete a topic.
+         * Delete topic
+         * @description Delete a topic from the project.
          */
         delete: operations["delete_topic_api_v1_topics__project_id___topic_id__delete"];
         options?: never;
@@ -430,8 +550,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Merge Topics
-         * @description Merge multiple topics into one.
+         * Merge topics
+         * @description Merge multiple source topics into a new target topic and reassign linked keywords to it.
          */
         post: operations["merge_topics_api_v1_topics__project_id__merge_post"];
         delete?: never;
@@ -448,14 +568,14 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Briefs
-         * @description List content briefs for a project.
+         * List content briefs
+         * @description Return paginated content briefs for a project with optional status filtering.
          */
         get: operations["list_briefs_api_v1_content__project_id__briefs_get"];
         put?: never;
         /**
-         * Create Brief
-         * @description Create a new content brief.
+         * Create content brief
+         * @description Create a new content brief for a project topic and primary keyword.
          */
         post: operations["create_brief_api_v1_content__project_id__briefs_post"];
         delete?: never;
@@ -472,19 +592,19 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Brief
-         * @description Get detailed content brief.
+         * Get content brief
+         * @description Return detailed information for a specific content brief.
          */
         get: operations["get_brief_api_v1_content__project_id__briefs__brief_id__get"];
         /**
-         * Update Brief
-         * @description Update a content brief.
+         * Update content brief
+         * @description Apply partial updates to an existing content brief.
          */
         put: operations["update_brief_api_v1_content__project_id__briefs__brief_id__put"];
         post?: never;
         /**
-         * Delete Brief
-         * @description Delete a content brief.
+         * Delete content brief
+         * @description Delete a content brief from the project.
          */
         delete: operations["delete_brief_api_v1_content__project_id__briefs__brief_id__delete"];
         options?: never;
@@ -500,10 +620,90 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Writer Instructions
-         * @description Get writer instructions for a brief.
+         * Get writer instructions
+         * @description Return the generated writer instructions attached to a content brief, if available.
          */
         get: operations["get_writer_instructions_api_v1_content__project_id__briefs__brief_id__instructions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{project_id}/articles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List generated articles
+         * @description Return paginated generated article artifacts for a project.
+         */
+        get: operations["list_articles_api_v1_content__project_id__articles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{project_id}/briefs/{brief_id}/article": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get article by brief
+         * @description Return the canonical generated article for a brief.
+         */
+        get: operations["get_article_for_brief_api_v1_content__project_id__briefs__brief_id__article_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{project_id}/briefs/{brief_id}/article/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate article
+         * @description Regenerate article content for a brief and increment article version.
+         */
+        post: operations["regenerate_article_api_v1_content__project_id__briefs__brief_id__article_regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/content/{project_id}/articles/{article_id}/versions/{version_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get article version
+         * @description Fetch an immutable article version snapshot by version number.
+         */
+        get: operations["get_article_version_api_v1_content__project_id__articles__article_id__versions__version_number__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -520,8 +720,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Health Check
-         * @description Health check endpoint.
+         * Health check
+         * @description Return service health status and backend version information.
          */
         get: operations["health_check_health_get"];
         put?: never;
@@ -537,6 +737,156 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * ContentArticleDetailResponse
+         * @description Full content article contract.
+         */
+        ContentArticleDetailResponse: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Brief Id */
+            brief_id: string;
+            /** Title */
+            title: string;
+            /** Slug */
+            slug: string;
+            /** Primary Keyword */
+            primary_keyword: string;
+            /** Status */
+            status: string;
+            /** Current Version */
+            current_version: number;
+            /** Generation Model */
+            generation_model: string | null;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Modular Document */
+            modular_document: {
+                [key: string]: unknown;
+            };
+            /** Rendered Html */
+            rendered_html: string;
+            /** Qa Report */
+            qa_report: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * ContentArticleListResponse
+         * @description Paginated article list.
+         */
+        ContentArticleListResponse: {
+            /** Items */
+            items: components["schemas"]["ContentArticleResponse"][];
+            /** Total */
+            total: number;
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+        };
+        /**
+         * ContentArticleResponse
+         * @description Canonical content article summary.
+         */
+        ContentArticleResponse: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Brief Id */
+            brief_id: string;
+            /** Title */
+            title: string;
+            /** Slug */
+            slug: string;
+            /** Primary Keyword */
+            primary_keyword: string;
+            /** Status */
+            status: string;
+            /** Current Version */
+            current_version: number;
+            /** Generation Model */
+            generation_model: string | null;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * ContentArticleVersionResponse
+         * @description Immutable article version response.
+         */
+        ContentArticleVersionResponse: {
+            /** Id */
+            id: string;
+            /** Article Id */
+            article_id: string;
+            /** Version Number */
+            version_number: number;
+            /** Title */
+            title: string;
+            /** Slug */
+            slug: string;
+            /** Primary Keyword */
+            primary_keyword: string;
+            /** Modular Document */
+            modular_document: {
+                [key: string]: unknown;
+            };
+            /** Rendered Html */
+            rendered_html: string;
+            /** Qa Report */
+            qa_report: {
+                [key: string]: unknown;
+            } | null;
+            /** Status */
+            status: string;
+            /** Change Reason */
+            change_reason: string | null;
+            /** Generation Model */
+            generation_model: string | null;
+            /** Generation Temperature */
+            generation_temperature: number | null;
+            /** Created By Regeneration */
+            created_by_regeneration: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
          * ContentBriefCreate
          * @description Schema for creating a content brief.
          */
@@ -551,6 +901,8 @@ export interface components {
             target_word_count_min?: number | null;
             /** Target Word Count Max */
             target_word_count_max?: number | null;
+            /** Proposed Publication Date */
+            proposed_publication_date?: string | null;
         };
         /**
          * ContentBriefDetailResponse
@@ -575,6 +927,8 @@ export interface components {
             working_titles: string[] | null;
             /** Target Audience */
             target_audience: string | null;
+            /** Proposed Publication Date */
+            proposed_publication_date: string | null;
             /** Target Word Count Min */
             target_word_count_min: number | null;
             /** Target Word Count Max */
@@ -667,6 +1021,8 @@ export interface components {
             working_titles: string[] | null;
             /** Target Audience */
             target_audience: string | null;
+            /** Proposed Publication Date */
+            proposed_publication_date: string | null;
             /** Target Word Count Min */
             target_word_count_min: number | null;
             /** Target Word Count Max */
@@ -701,8 +1057,167 @@ export interface components {
             target_word_count_min?: number | null;
             /** Target Word Count Max */
             target_word_count_max?: number | null;
+            /** Proposed Publication Date */
+            proposed_publication_date?: string | null;
             /** Status */
             status?: string | null;
+        };
+        /**
+         * ContentPipelineConfig
+         * @description Configuration for content-production mode.
+         */
+        ContentPipelineConfig: {
+            /**
+             * Max Briefs
+             * @description Maximum number of content briefs to generate in Step 12.
+             * @default 20
+             */
+            max_briefs: number;
+            /**
+             * Posts Per Week
+             * @description Publishing cadence for Step 12 calendar assignment.
+             * @default 1
+             */
+            posts_per_week: number;
+            /**
+             * Preferred Weekdays
+             * @description Preferred publish weekdays where Monday=0 ... Sunday=6.
+             */
+            preferred_weekdays?: number[];
+            /**
+             * Min Lead Days
+             * @description Minimum days from today before the first proposed publish date.
+             * @default 7
+             */
+            min_lead_days: number;
+            /**
+             * Publication Start Date
+             * @description Optional earliest publication date override (YYYY-MM-DD).
+             */
+            publication_start_date?: string | null;
+            /**
+             * Use Llm Timing Hints
+             * @description Whether Step 12 may use LLM-suggested timing within schedule bounds.
+             * @default true
+             */
+            use_llm_timing_hints: boolean;
+            /**
+             * Llm Timing Flex Days
+             * @description Maximum day distance for snapping to an LLM timing hint.
+             * @default 14
+             */
+            llm_timing_flex_days: number;
+        };
+        /**
+         * DiscoveryLoopConfig
+         * @description Configuration for discovery-loop mode.
+         */
+        DiscoveryLoopConfig: {
+            /**
+             * Max Iterations
+             * @description Maximum number of adaptive discovery iterations before pausing.
+             * @default 3
+             */
+            max_iterations: number;
+            /**
+             * Min Eligible Topics
+             * @description Minimum accepted topics required to complete discovery.
+             */
+            min_eligible_topics?: number | null;
+            /**
+             * Require Serp Gate
+             * @description Whether topic acceptance must pass SERP-based gate checks.
+             * @default true
+             */
+            require_serp_gate: boolean;
+            /**
+             * Max Keyword Difficulty
+             * @description Maximum allowed keyword difficulty for accepted discovery topics.
+             * @default 65
+             */
+            max_keyword_difficulty: number;
+            /**
+             * Min Domain Diversity
+             * @description Minimum unique-domain ratio in top SERP results for acceptance.
+             * @default 0.5
+             */
+            min_domain_diversity: number;
+            /**
+             * Require Intent Match
+             * @description Reject topics with SERP intent mismatch on primary keyword.
+             * @default true
+             */
+            require_intent_match: boolean;
+            /**
+             * Max Serp Servedness
+             * @description In workflow markets, reject a topic when SERP servedness is above this level and competitor density is also high.
+             * @default 0.75
+             */
+            max_serp_servedness: number;
+            /**
+             * Max Serp Competitor Density
+             * @description Maximum allowed vendor/competitor density for workflow-cluster acceptance.
+             * @default 0.7
+             */
+            max_serp_competitor_density: number;
+            /**
+             * Min Serp Intent Confidence
+             * @description Minimum cluster-level SERP intent confidence when intent matching is required.
+             * @default 0.35
+             */
+            min_serp_intent_confidence: number;
+            /**
+             * Auto Start Content
+             * @description Automatically start content_production when discovery completes.
+             * @default true
+             */
+            auto_start_content: boolean;
+        };
+        /**
+         * DiscoveryTopicSnapshotResponse
+         * @description Snapshot response for discovery-loop topic decisions.
+         */
+        DiscoveryTopicSnapshotResponse: {
+            /** Id */
+            id: string;
+            /** Project Id */
+            project_id: string;
+            /** Pipeline Run Id */
+            pipeline_run_id: string;
+            /** Iteration Index */
+            iteration_index: number;
+            /** Source Topic Id */
+            source_topic_id: string | null;
+            /** Topic Name */
+            topic_name: string;
+            /** Fit Tier */
+            fit_tier: string | null;
+            /** Fit Score */
+            fit_score: number | null;
+            /** Keyword Difficulty */
+            keyword_difficulty: number | null;
+            /** Domain Diversity */
+            domain_diversity: number | null;
+            /** Validated Intent */
+            validated_intent: string | null;
+            /** Validated Page Type */
+            validated_page_type: string | null;
+            /** Top Domains */
+            top_domains: string[] | null;
+            /** Decision */
+            decision: string;
+            /** Rejection Reasons */
+            rejection_reasons: string[] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -767,12 +1282,18 @@ export interface components {
             status: string;
             /** Search Volume */
             search_volume: number | null;
+            /** Adjusted Volume */
+            adjusted_volume: number | null;
             /** Cpc */
             cpc: number | null;
             /** Difficulty */
             difficulty: number | null;
             /** Intent */
             intent: string | null;
+            /** Intent Layer */
+            intent_layer: string | null;
+            /** Intent Score */
+            intent_score: number | null;
             /** Recommended Page Type */
             recommended_page_type: string | null;
             /** Funnel Stage */
@@ -815,6 +1336,10 @@ export interface components {
             risk_flags: string[] | null;
             /** Priority Factors */
             priority_factors: {
+                [key: string]: unknown;
+            } | null;
+            /** Discovery Signals */
+            discovery_signals: {
                 [key: string]: unknown;
             } | null;
             /** Serp Top Results */
@@ -865,12 +1390,18 @@ export interface components {
             status: string;
             /** Search Volume */
             search_volume: number | null;
+            /** Adjusted Volume */
+            adjusted_volume: number | null;
             /** Cpc */
             cpc: number | null;
             /** Difficulty */
             difficulty: number | null;
             /** Intent */
             intent: string | null;
+            /** Intent Layer */
+            intent_layer: string | null;
+            /** Intent Score */
+            intent_score: number | null;
             /** Recommended Page Type */
             recommended_page_type: string | null;
             /** Funnel Stage */
@@ -968,10 +1499,117 @@ export interface components {
             created_at: string;
         };
         /**
+         * PipelineRunStrategy
+         * @description Run-scoped strategy overrides for product/ICP fit.
+         */
+        PipelineRunStrategy: {
+            /** Conversion Intents */
+            conversion_intents?: string[];
+            /**
+             * Scope Mode
+             * @default balanced_adjacent
+             * @enum {string}
+             */
+            scope_mode: "strict" | "balanced_adjacent" | "broad_education";
+            /**
+             * Branded Keyword Mode
+             * @default comparisons_only
+             * @enum {string}
+             */
+            branded_keyword_mode: "comparisons_only" | "exclude_all" | "allow_all";
+            /**
+             * Fit Threshold Profile
+             * @default aggressive
+             * @enum {string}
+             */
+            fit_threshold_profile: "aggressive" | "moderate" | "lenient";
+            /** Include Topics */
+            include_topics?: string[];
+            /** Exclude Topics */
+            exclude_topics?: string[];
+            /** Icp Roles */
+            icp_roles?: string[];
+            /** Icp Industries */
+            icp_industries?: string[];
+            /** Icp Pains */
+            icp_pains?: string[];
+            /** Min Eligible Target */
+            min_eligible_target?: number | null;
+            /**
+             * Market Mode Override
+             * @default auto
+             * @enum {string}
+             */
+            market_mode_override: "auto" | "established_category" | "fragmented_workflow" | "mixed";
+        };
+        /**
          * PipelineStartRequest
          * @description Schema for starting a pipeline run.
+         * @example {
+         *       "end_step": 14,
+         *       "mode": "full",
+         *       "start_step": 0,
+         *       "strategy": {
+         *         "fit_threshold_profile": "aggressive"
+         *       }
+         *     }
+         * @example {
+         *       "content": {
+         *         "max_briefs": 20,
+         *         "min_lead_days": 7,
+         *         "posts_per_week": 3,
+         *         "preferred_weekdays": [
+         *           0,
+         *           2,
+         *           4
+         *         ]
+         *       },
+         *       "discovery": {
+         *         "auto_start_content": true,
+         *         "max_iterations": 3,
+         *         "max_keyword_difficulty": 65,
+         *         "max_serp_competitor_density": 0.7,
+         *         "max_serp_servedness": 0.75,
+         *         "min_domain_diversity": 0.5,
+         *         "min_eligible_topics": 8,
+         *         "min_serp_intent_confidence": 0.35,
+         *         "require_intent_match": true,
+         *         "require_serp_gate": true
+         *       },
+         *       "mode": "discovery_loop",
+         *       "strategy": {
+         *         "exclude_topics": [
+         *           "medical advice"
+         *         ],
+         *         "fit_threshold_profile": "aggressive",
+         *         "include_topics": [
+         *           "customer support automation"
+         *         ],
+         *         "market_mode_override": "auto",
+         *         "scope_mode": "strict"
+         *       }
+         *     }
+         * @example {
+         *       "content": {
+         *         "max_briefs": 15,
+         *         "min_lead_days": 5,
+         *         "posts_per_week": 2,
+         *         "preferred_weekdays": [
+         *           1,
+         *           3
+         *         ]
+         *       },
+         *       "mode": "content_production"
+         *     }
          */
         PipelineStartRequest: {
+            /**
+             * Mode
+             * @description Pipeline orchestration mode: full range execution, adaptive discovery loop, or content-only production.
+             * @default full
+             * @enum {string}
+             */
+            mode: "full" | "discovery_loop" | "content_production";
             /**
              * Start Step
              * @default 0
@@ -981,6 +1619,11 @@ export interface components {
             end_step?: number | null;
             /** Skip Steps */
             skip_steps?: number[] | null;
+            strategy?: components["schemas"]["PipelineRunStrategy"] | null;
+            /** @description Optional discovery loop controls (used when mode=discovery_loop). */
+            discovery?: components["schemas"]["DiscoveryLoopConfig"] | null;
+            /** @description Optional content pipeline controls (used in content-related modes). */
+            content?: components["schemas"]["ContentPipelineConfig"] | null;
         };
         /**
          * ProjectConstraints
@@ -1053,6 +1696,8 @@ export interface components {
              * @default traffic
              */
             primary_objective: string;
+            /** Secondary Goals */
+            secondary_goals?: string[] | null;
             /** Target Monthly Traffic */
             target_monthly_traffic?: number | null;
             /** Target Conversion Rate */
@@ -1155,6 +1800,14 @@ export interface components {
             settings?: components["schemas"]["ProjectSettings"] | null;
         };
         /**
+         * RegenerateArticleRequest
+         * @description Request payload for article regeneration.
+         */
+        RegenerateArticleRequest: {
+            /** Reason */
+            reason?: string | null;
+        };
+        /**
          * StepExecutionResponse
          * @description Schema for step execution response.
          */
@@ -1181,6 +1834,39 @@ export interface components {
             completed_at: string | null;
             /** Error Message */
             error_message: string | null;
+        };
+        /**
+         * TaskStatusResponse
+         * @description Schema for task status response.
+         */
+        TaskStatusResponse: {
+            /** Task Id */
+            task_id: string;
+            /** Status */
+            status: string;
+            /** Stage */
+            stage?: string | null;
+            /** Project Id */
+            project_id?: string | null;
+            /** Current Step */
+            current_step?: number | null;
+            /** Current Step Name */
+            current_step_name?: string | null;
+            /**
+             * Completed Steps
+             * @default 0
+             */
+            completed_steps: number;
+            /** Total Steps */
+            total_steps?: number | null;
+            /** Progress Percent */
+            progress_percent?: number | null;
+            /** Error Message */
+            error_message?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /**
          * Token
@@ -1244,16 +1930,34 @@ export interface components {
             funnel_stage: string | null;
             /** Total Volume */
             total_volume: number | null;
+            /** Adjusted Volume Sum */
+            adjusted_volume_sum: number | null;
             /** Avg Difficulty */
             avg_difficulty: number | null;
             /** Keyword Count */
             keyword_count: number;
+            /** Market Mode */
+            market_mode: string | null;
+            /** Demand Fragmentation Index */
+            demand_fragmentation_index: number | null;
+            /** Serp Servedness Score */
+            serp_servedness_score: number | null;
+            /** Serp Competitor Density */
+            serp_competitor_density: number | null;
             /** Priority Rank */
             priority_rank: number | null;
             /** Priority Score */
             priority_score: number | null;
             /** Expected Role */
             expected_role: string | null;
+            /** Fit Score */
+            fit_score: number | null;
+            /** Fit Tier */
+            fit_tier: string | null;
+            /** Fit Reasons */
+            fit_reasons: string[] | null;
+            /** Fit Threshold Used */
+            fit_threshold_used: number | null;
             /**
              * Created At
              * Format: date-time
@@ -1350,16 +2054,34 @@ export interface components {
             funnel_stage: string | null;
             /** Total Volume */
             total_volume: number | null;
+            /** Adjusted Volume Sum */
+            adjusted_volume_sum: number | null;
             /** Avg Difficulty */
             avg_difficulty: number | null;
             /** Keyword Count */
             keyword_count: number;
+            /** Market Mode */
+            market_mode: string | null;
+            /** Demand Fragmentation Index */
+            demand_fragmentation_index: number | null;
+            /** Serp Servedness Score */
+            serp_servedness_score: number | null;
+            /** Serp Competitor Density */
+            serp_competitor_density: number | null;
             /** Priority Rank */
             priority_rank: number | null;
             /** Priority Score */
             priority_score: number | null;
             /** Expected Role */
             expected_role: string | null;
+            /** Fit Score */
+            fit_score: number | null;
+            /** Fit Tier */
+            fit_tier: string | null;
+            /** Fit Reasons */
+            fit_reasons: string[] | null;
+            /** Fit Threshold Used */
+            fit_threshold_used: number | null;
             /**
              * Created At
              * Format: date-time
@@ -1604,6 +2326,134 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+        };
+    };
+    oauth_google_start_api_v1_auth_oauth_google_start_get: {
+        parameters: {
+            query: {
+                redirect_uri: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    oauth_twitter_start_api_v1_auth_oauth_twitter_start_get: {
+        parameters: {
+            query: {
+                redirect_uri: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    oauth_google_callback_api_v1_auth_oauth_google_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    oauth_twitter_callback_api_v1_auth_oauth_twitter_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1900,6 +2750,38 @@ export interface operations {
             };
         };
     };
+    list_discovery_snapshots_api_v1_pipeline__project_id__runs__run_id__discovery_snapshots_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiscoveryTopicSnapshotResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pause_pipeline_api_v1_pipeline__project_id__pause_post: {
         parameters: {
             query?: never;
@@ -1933,12 +2815,13 @@ export interface operations {
             };
         };
     };
-    resume_pipeline_api_v1_pipeline__project_id__resume_post: {
+    resume_pipeline_api_v1_pipeline__project_id__resume__run_id__post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 project_id: string;
+                run_id: string;
             };
             cookie?: never;
         };
@@ -1953,6 +2836,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_task_status_api_v1_tasks__task_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2181,6 +3095,7 @@ export interface operations {
             query?: {
                 page?: number;
                 page_size?: number;
+                eligibility?: "all" | "primary" | "secondary" | "excluded";
             };
             header?: never;
             path: {
@@ -2629,6 +3544,142 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WriterInstructionsResponse"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_articles_api_v1_content__project_id__articles_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                page_size?: number;
+                status?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentArticleListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_article_for_brief_api_v1_content__project_id__briefs__brief_id__article_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                brief_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentArticleDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_article_api_v1_content__project_id__briefs__brief_id__article_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                brief_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegenerateArticleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentArticleDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_article_version_api_v1_content__project_id__articles__article_id__versions__version_number__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                article_id: string;
+                version_number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentArticleVersionResponse"];
                 };
             };
             /** @description Validation Error */

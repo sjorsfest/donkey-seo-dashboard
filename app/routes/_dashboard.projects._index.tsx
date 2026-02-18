@@ -1,12 +1,34 @@
-import { Form, data, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
+import { motion } from "framer-motion";
+import { Link, data, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/_dashboard.projects._index";
-import type { components } from "~/types/api.generated";
+import { Badge } from "~/components/ui/badge";
+import { Button } from "~/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "~/components/ui/card";
+import { Skeleton } from "~/components/ui/skeleton";
 import { ApiClient } from "~/lib/api.server";
+import {
+  formatDateTime,
+  formatStatusLabel,
+  getStatusBadgeClass,
+  summarizeSteps,
+} from "~/lib/dashboard";
+import type { components } from "~/types/api.generated";
 
-type ProjectCreate = components["schemas"]["ProjectCreate"];
 type ProjectListResponse = components["schemas"]["ProjectListResponse"];
-type PipelineStartRequest = components["schemas"]["PipelineStartRequest"];
 type ProjectResponse = components["schemas"]["ProjectResponse"];
+type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
+
+type LoaderData = {
+  projects: ProjectResponse[];
+  latestRunsByProject: Record<string, PipelineRunResponse | null>;
+};
 
 export async function loader({ request }: Route.LoaderArgs) {
   const api = new ApiClient(request);
@@ -24,284 +46,187 @@ export async function loader({ request }: Route.LoaderArgs) {
     throw new Response("Failed to load projects.", { status: response.status });
   }
 
-  const projects = (await response.json()) as ProjectListResponse;
+  const projectsPayload = (await response.json()) as ProjectListResponse;
+  const projects = (projectsPayload.items ?? []) as ProjectResponse[];
+
+  const runResults = await Promise.all(
+    projects.map(async (project) => {
+      const runsResponse = await api.fetch(`/pipeline/${project.id}/runs?limit=1`);
+
+      if (runsResponse.status === 401) {
+        return { unauthorized: true, projectId: project.id, run: null as PipelineRunResponse | null };
+      }
+
+      if (!runsResponse.ok) {
+        return { unauthorized: false, projectId: project.id, run: null as PipelineRunResponse | null };
+      }
+
+      const runs = (await runsResponse.json()) as PipelineRunResponse[];
+      return { unauthorized: false, projectId: project.id, run: runs[0] ?? null };
+    })
+  );
+
+  if (runResults.some((result) => result.unauthorized)) {
+    return redirect("/login", {
+      headers: {
+        "Set-Cookie": await api.logout(),
+      },
+    });
+  }
+
+  const latestRunsByProject: Record<string, PipelineRunResponse | null> = {};
+  for (const result of runResults) {
+    latestRunsByProject[result.projectId] = result.run;
+  }
+
   return data(
-    { projects },
+    {
+      projects,
+      latestRunsByProject,
+    } satisfies LoaderData,
     {
       headers: await api.commit(),
     }
   );
 }
 
-function parseOptionalInt(value: FormDataEntryValue | null) {
-  if (!value) return undefined;
-  const trimmed = String(value).trim();
-  if (!trimmed) return undefined;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function parseSkipSteps(value: FormDataEntryValue | null) {
-  if (!value) return undefined;
-  const trimmed = String(value).trim();
-  if (!trimmed) return undefined;
-  const numbers = trimmed
-    .split(",")
-    .map((entry) => Number(entry.trim()))
-    .filter((entry) => Number.isFinite(entry));
-  return numbers.length ? numbers : undefined;
-}
-
-export async function action({ request }: Route.ActionArgs) {
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") ?? "");
-
-  if (intent === "createProject") {
-    const name = String(formData.get("name") ?? "").trim();
-    const domain = String(formData.get("domain") ?? "").trim();
-    const description = String(formData.get("description") ?? "").trim();
-
-    if (!name || !domain) {
-      return data({ error: "Project name and domain are required." }, { status: 400 });
-    }
-
-    const payload: ProjectCreate = {
-      name,
-      domain,
-      description: description || null,
-    };
-
-    const api = new ApiClient(request);
-    const response = await api.fetch("/projects/", {
-      method: "POST",
-      json: payload,
-    });
-
-    if (!response.ok) {
-      return data(
-        { error: "Unable to create project." },
-        { status: response.status, headers: await api.commit() }
-      );
-    }
-
-    return redirect("/projects?created=1", {
-      headers: await api.commit(),
-    });
-  }
-
-  if (intent === "startPipeline") {
-    const projectId = String(formData.get("project_id") ?? "").trim();
-
-    if (!projectId) {
-      return data({ error: "Missing project id." }, { status: 400 });
-    }
-
-    const payload: PipelineStartRequest = {
-      start_step: parseOptionalInt(formData.get("start_step")),
-      end_step: parseOptionalInt(formData.get("end_step")),
-      skip_steps: parseSkipSteps(formData.get("skip_steps")),
-    };
-
-    const api = new ApiClient(request);
-    const response = await api.fetch(
-      `/pipeline/${projectId}/start`,
-      {
-        method: "POST",
-        json: payload,
-      }
-    );
-
-    if (!response.ok) {
-      return data(
-        { error: "Unable to start pipeline." },
-        { status: response.status, headers: await api.commit() }
-      );
-    }
-
-    return data(
-      { success: "Pipeline started successfully.", projectId },
-      { headers: await api.commit() }
-    );
-  }
-
-  if (intent === "resumePipeline") {
-    const projectId = String(formData.get("project_id") ?? "").trim();
-
-    if (!projectId) {
-      return data({ error: "Missing project id." }, { status: 400 });
-    }
-
-    const api = new ApiClient(request);
-    const response = await api.fetch(`/pipeline/${projectId}/resume`, {
-      method: "POST",
-    });
-
-    if (!response.ok) {
-      return data(
-        { error: "Unable to resume pipeline." },
-        { status: response.status, headers: await api.commit() }
-      );
-    }
-
-    return data(
-      { success: "Pipeline resumed successfully.", projectId },
-      { headers: await api.commit() }
-    );
-  }
-
-  return data({ error: "Unknown action." }, { status: 400 });
-}
-
-export default function ProjectsDashboard() {
-  const { projects } = useLoaderData<typeof loader>() as { projects: ProjectListResponse };
-  const actionData = useActionData<typeof action>();
-  const navigation = useNavigation();
-  const [searchParams] = useSearchParams();
-
-  const isSubmitting = navigation.state === "submitting";
-  const created = searchParams.get("created") === "1";
-  const projectItems = (projects.items ?? []) as ProjectResponse[];
+export default function ProjectsOverviewRoute() {
+  const { projects, latestRunsByProject } = useLoaderData<typeof loader>() as LoaderData;
 
   return (
     <div className="space-y-8">
-      <section className="bg-white border-2 border-black rounded-3xl p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,0.9)]">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+      <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-white via-[#f0f6f5] to-[#eef1f8] p-6 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.55)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="font-display text-2xl font-bold text-slate-900">Create a project</h2>
-            <p className="text-sm text-slate-500">Start a new keyword research workflow.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2f6f71]">Dashboard</p>
+            <h1 className="mt-2 font-display text-3xl font-bold text-slate-900">Pipeline Portfolio</h1>
+            <p className="mt-2 max-w-2xl text-sm text-slate-600">
+              Track every project at a glance, then jump into a control room to inspect and steer the pipeline.
+            </p>
           </div>
-          {created && (
-            <div className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
-              Project created
-            </div>
-          )}
+          <Link to="/projects/new" className="inline-flex">
+            <Button size="lg" className="shadow-lg shadow-[#2f6f71]/20">
+              New project
+            </Button>
+          </Link>
         </div>
-
-        {actionData?.error && (
-          <div className="mt-4 p-3 rounded-xl bg-rose-50 text-rose-600 text-sm font-medium">
-            {actionData.error}
-          </div>
-        )}
-
-        <Form method="post" className="mt-6 grid gap-4 md:grid-cols-3">
-          <input type="hidden" name="intent" value="createProject" />
-          <div className="md:col-span-1">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Project name</label>
-            <input
-              type="text"
-              name="name"
-              placeholder="Growth roadmap"
-              className="w-full h-11 rounded-xl border border-slate-200 px-3 text-sm"
-              required
-            />
-          </div>
-          <div className="md:col-span-1">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Domain</label>
-            <input
-              type="text"
-              name="domain"
-              placeholder="example.com"
-              className="w-full h-11 rounded-xl border border-slate-200 px-3 text-sm"
-              required
-            />
-          </div>
-          <div className="md:col-span-1">
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
-            <input
-              type="text"
-              name="description"
-              placeholder="Optional notes"
-              className="w-full h-11 rounded-xl border border-slate-200 px-3 text-sm"
-            />
-          </div>
-          <div className="md:col-span-3 flex justify-end">
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="h-11 px-6 rounded-xl font-bold text-white bg-secondary shadow-lg shadow-secondary/20 hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70"
-            >
-              {isSubmitting ? "Creating..." : "Create project"}
-            </button>
-          </div>
-        </Form>
       </section>
 
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-display text-xl font-bold text-slate-900">Your projects</h3>
-            <p className="text-sm text-slate-500">Launch pipelines and track progress.</p>
-          </div>
-          {actionData?.success && (
-            <div className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold">
-              {actionData.success}
-            </div>
-          )}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-2xl font-bold text-slate-900">Your projects</h2>
+          <Badge variant="info">{projects.length} total</Badge>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          {projectItems.map((project) => (
-            <div
-              key={project.id}
-              className="bg-white border-2 border-black/80 rounded-3xl p-5 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.7)] flex flex-col gap-4"
-            >
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500 font-semibold">{project.status}</p>
-                <h4 className="font-display text-xl font-bold text-slate-900">{project.name}</h4>
-                <p className="text-sm text-slate-600">{project.domain}</p>
-                <p className="text-xs text-slate-400 mt-1">Step {project.current_step}</p>
-              </div>
+        {projects.length === 0 ? (
+          <Card className="border-dashed bg-white/80">
+            <CardHeader>
+              <CardTitle>No projects yet</CardTitle>
+              <CardDescription>
+                Start with a guided wizard and launch your first SEO pipeline in minutes.
+              </CardDescription>
+            </CardHeader>
+            <CardFooter>
+              <Link to="/projects/new" className="inline-flex">
+                <Button>Create your first project</Button>
+              </Link>
+            </CardFooter>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {projects.map((project, index) => {
+              const latestRun = latestRunsByProject[project.id];
+              const stepSummary = latestRun ? summarizeSteps(latestRun.step_executions ?? []) : null;
 
-              <Form method="post" className="grid gap-3">
-                <input type="hidden" name="intent" value="startPipeline" />
-                <input type="hidden" name="project_id" value={project.id} />
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    type="number"
-                    name="start_step"
-                    placeholder="Start"
-                    className="h-9 rounded-lg border border-slate-200 px-2 text-xs"
-                  />
-                  <input
-                    type="number"
-                    name="end_step"
-                    placeholder="End"
-                    className="h-9 rounded-lg border border-slate-200 px-2 text-xs"
-                  />
-                  <input
-                    type="text"
-                    name="skip_steps"
-                    placeholder="Skip (1,3)"
-                    className="h-9 rounded-lg border border-slate-200 px-2 text-xs"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="h-10 rounded-xl font-bold text-sm bg-black text-white hover:bg-slate-900 transition-colors"
+              return (
+                <motion.div
+                  key={project.id}
+                  initial={{ opacity: 0, y: 14 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.24, delay: index * 0.04 }}
                 >
-                  Start pipeline
-                </button>
-              </Form>
-              <Form method="post" className="grid">
-                <input type="hidden" name="intent" value="resumePipeline" />
-                <input type="hidden" name="project_id" value={project.id} />
-                <button
-                  type="submit"
-                  className="h-9 rounded-xl font-bold text-sm border-2 border-black bg-white hover:bg-black hover:text-white transition-colors"
-                >
-                  Resume pipeline
-                </button>
-              </Form>
-            </div>
-          ))}
-        </div>
+                  <Card className="h-full border-slate-200 bg-white">
+                    <CardHeader>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <CardTitle>{project.name}</CardTitle>
+                          <CardDescription>{project.domain}</CardDescription>
+                        </div>
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClass(project.status)}`}
+                        >
+                          {formatStatusLabel(project.status)}
+                        </span>
+                      </div>
+                    </CardHeader>
 
-        {projectItems.length === 0 && (
-          <div className="mt-6 p-6 rounded-2xl border border-dashed border-slate-300 text-sm text-slate-500 bg-white/60">
-            No projects yet. Create one above to get started.
+                    <CardContent className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                        <div>
+                          <p className="font-semibold text-slate-800">Current step</p>
+                          <p>#{project.current_step}</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-slate-800">Updated</p>
+                          <p>{formatDateTime(project.updated_at)}</p>
+                        </div>
+                      </div>
+
+                      {!latestRun ? (
+                        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-500">
+                          No run history yet.
+                        </div>
+                      ) : (
+                        <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <p className="font-semibold text-slate-800">Latest run</p>
+                            <span
+                              className={`inline-flex rounded-full border px-2 py-1 font-semibold ${getStatusBadgeClass(latestRun.status)}`}
+                            >
+                              {formatStatusLabel(latestRun.status)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500">
+                            Started {formatDateTime(latestRun.started_at ?? latestRun.created_at)}
+                          </p>
+                          <div className="flex flex-wrap gap-1.5 text-[11px]">
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-900">
+                              Done: {stepSummary?.succeeded ?? 0}
+                            </span>
+                            <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-900">
+                              Active: {stepSummary?.active ?? 0}
+                            </span>
+                            <span className="rounded-full bg-rose-100 px-2 py-1 font-semibold text-rose-900">
+                              Failed: {stepSummary?.failed ?? 0}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+
+                    <CardFooter className="flex justify-end gap-2">
+                      <Link to={`/projects/${project.id}/discovery`} className="inline-flex">
+                        <Button variant="outline">Open discovery</Button>
+                      </Link>
+                      <Link to={`/projects/${project.id}/creation`} className="inline-flex">
+                        <Button variant="outline">Open creation</Button>
+                      </Link>
+                    </CardFooter>
+                  </Card>
+                </motion.div>
+              );
+            })}
           </div>
         )}
       </section>
+
+      {projects.length > 0 ? null : (
+        <section className="grid gap-2 md:grid-cols-3">
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+          <Skeleton className="h-20" />
+        </section>
+      )}
     </div>
   );
 }

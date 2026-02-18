@@ -5,6 +5,34 @@ import { ApiClient } from "~/lib/api.server";
 import { commitSession, getSession } from "~/lib/session.server";
 
 type Token = components["schemas"]["Token"];
+type SocialProvider = "google" | "twitter";
+
+const SOCIAL_PROVIDERS = new Set<SocialProvider>(["google", "twitter"]);
+
+function parseSocialProvider(value: string): SocialProvider | null {
+  if (!SOCIAL_PROVIDERS.has(value as SocialProvider)) return null;
+  return value as SocialProvider;
+}
+
+function getSocialLoginStartPath(provider: SocialProvider) {
+  if (provider === "google") {
+    return process.env.GOOGLE_OAUTH_START_PATH?.trim() || "/auth/oauth/google/start";
+  }
+  return process.env.TWITTER_OAUTH_START_PATH?.trim() || "/auth/oauth/twitter/start";
+}
+
+function buildSocialLoginStartUrl(request: Request, api: ApiClient, provider: SocialProvider) {
+  const startPathOrUrl = getSocialLoginStartPath(provider);
+  const startUrl = /^https?:\/\//i.test(startPathOrUrl)
+    ? new URL(startPathOrUrl)
+    : new URL(api.url(startPathOrUrl));
+
+  const callbackUrl = new URL("/auth/callback", new URL(request.url).origin);
+  callbackUrl.searchParams.set("provider", provider);
+  startUrl.searchParams.set("redirect_uri", callbackUrl.toString());
+
+  return startUrl.toString();
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSession(request.headers.get("Cookie"));
@@ -24,6 +52,18 @@ function parseErrorMessage(payload: unknown) {
 
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "").trim();
+
+  if (intent.startsWith("oauth:")) {
+    const provider = parseSocialProvider(intent.replace("oauth:", ""));
+    if (!provider) {
+      return data({ error: "Unsupported social login provider." }, { status: 400 });
+    }
+
+    const api = new ApiClient(request);
+    return redirect(buildSocialLoginStartUrl(request, api, provider));
+  }
+
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "").trim();
 
@@ -63,7 +103,10 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Login() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
-  const isLoading = navigation.state === "submitting";
+  const activeIntent = String(navigation.formData?.get("intent") ?? "");
+  const isLoading = navigation.state === "submitting" && activeIntent !== "oauth:google" && activeIntent !== "oauth:twitter";
+  const isGoogleLoading = navigation.state === "submitting" && activeIntent === "oauth:google";
+  const isTwitterLoading = navigation.state === "submitting" && activeIntent === "oauth:twitter";
 
   return (
     <div className="w-full max-w-md mx-auto">
@@ -83,6 +126,43 @@ export default function Login() {
             {actionData.error}
           </div>
         )}
+
+        <Form method="post" className="space-y-3">
+          <button
+            type="submit"
+            name="intent"
+            value="oauth:google"
+            disabled={navigation.state === "submitting"}
+            className="w-full h-11 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 disabled:opacity-70"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4">
+              <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.3h6.5a5.6 5.6 0 0 1-2.4 3.7v3h3.9c2.3-2.1 3.5-5.1 3.5-8.7Z" />
+              <path fill="#34A853" d="M12 24c3.2 0 5.9-1 7.9-2.9l-3.9-3a7.1 7.1 0 0 1-10.6-3.7H1.3v3.1A12 12 0 0 0 12 24Z" />
+              <path fill="#FBBC05" d="M5.4 14.4A7.2 7.2 0 0 1 5 12c0-.8.1-1.6.4-2.4V6.5H1.3A12 12 0 0 0 0 12c0 1.9.4 3.8 1.3 5.5l4.1-3.1Z" />
+              <path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.5 1.7l3.4-3.4A11.8 11.8 0 0 0 12 0C7.3 0 3.1 2.7 1.3 6.5l4.1 3.1a7.1 7.1 0 0 1 6.6-4.8Z" />
+            </svg>
+            {isGoogleLoading ? "Redirecting..." : "Continue with Google"}
+          </button>
+
+          <button
+            type="submit"
+            name="intent"
+            value="oauth:twitter"
+            disabled={navigation.state === "submitting"}
+            className="w-full h-11 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 disabled:opacity-70"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4 fill-current">
+              <path d="M18.9 2H22l-6.8 7.8 8 10.2H17L12 13.6 6.4 20H3.3l7.3-8.4L3 2h6.3l4.4 5.8L18.9 2Zm-1.1 16.2h1.7L8.4 3.7H6.5l11.3 14.5Z" />
+            </svg>
+            {isTwitterLoading ? "Redirecting..." : "Continue with Twitter"}
+          </button>
+        </Form>
+
+        <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <div className="h-px flex-1 bg-slate-200" />
+          <span>or</span>
+          <div className="h-px flex-1 bg-slate-200" />
+        </div>
 
         <Form method="post" className="space-y-5">
           <div className="space-y-1.5">
