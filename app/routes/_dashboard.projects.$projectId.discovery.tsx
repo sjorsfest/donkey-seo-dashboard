@@ -105,6 +105,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       max_keyword_difficulty: 65,
       min_domain_diversity: 0.5,
       require_intent_match: true,
+      max_serp_servedness: 0.75,
+      max_serp_competitor_density: 0.7,
+      min_serp_intent_confidence: 0.35,
       auto_start_content: true,
     },
   };

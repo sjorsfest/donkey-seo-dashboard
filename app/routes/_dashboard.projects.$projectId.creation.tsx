@@ -100,6 +100,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     start_step: 0,
     content: {
       max_briefs: 20,
+      posts_per_week: 1,
+      min_lead_days: 7,
+      use_llm_timing_hints: true,
+      llm_timing_flex_days: 14,
     },
   };
 

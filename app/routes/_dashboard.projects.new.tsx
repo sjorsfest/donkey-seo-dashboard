@@ -37,8 +37,8 @@ const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: st
     description: "Maximize discoverability and topical authority.",
   },
   {
-    value: "lead_gen",
-    title: "Lead Gen",
+    value: "lead_generation",
+    title: "Lead Generation",
     description: "Prioritize keywords that convert to pipeline.",
   },
   {
@@ -48,8 +48,47 @@ const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: st
   },
 ];
 
+const INTENT_FOCUS_OPTIONS: Array<{ value: string; title: string; description: string }> = [
+  {
+    value: "traffic_growth",
+    title: "Traffic growth",
+    description: "Expand educational and awareness-led demand.",
+  },
+  {
+    value: "lead_generation",
+    title: "Lead generation",
+    description: "Prioritize solution-aware and conversion-ready demand.",
+  },
+  {
+    value: "revenue_content",
+    title: "Revenue content",
+    description: "Emphasize high-intent pages tied to buying decisions.",
+  },
+  {
+    value: "transactional",
+    title: "Transactional",
+    description: "Target queries with clear action intent.",
+  },
+  {
+    value: "commercial",
+    title: "Commercial",
+    description: "Capture evaluation-stage comparison demand.",
+  },
+  {
+    value: "pricing",
+    title: "Pricing",
+    description: "Focus on budget and plan-sensitive searches.",
+  },
+  {
+    value: "purchase",
+    title: "Purchase",
+    description: "Bias toward decision and checkout-stage intent.",
+  },
+];
+
 function parseSetupPreset(value: string): SetupPreset {
-  if (value === "lead_gen" || value === "revenue_content") return value;
+  if (value === "lead_generation" || value === "lead_gen") return "lead_generation";
+  if (value === "revenue_content") return value;
   return "traffic_growth";
 }
 
@@ -154,6 +193,7 @@ export async function action({ request }: Route.ActionArgs) {
         : String(formData.get("strategy_fit_threshold_profile") ?? "aggressive") === "lenient"
           ? "lenient"
           : "aggressive",
+    market_mode_override: "auto",
   };
 
   const minEligibleTarget = parseOptionalInteger(String(formData.get("strategy_min_eligible_target") ?? ""));
@@ -181,6 +221,9 @@ export async function action({ request }: Route.ActionArgs) {
       max_keyword_difficulty: 65,
       min_domain_diversity: 0.5,
       require_intent_match: true,
+      max_serp_servedness: 0.75,
+      max_serp_competitor_density: 0.7,
+      min_serp_intent_confidence: 0.35,
       auto_start_content: true,
     },
   };
@@ -219,7 +262,7 @@ export default function ProjectSetupRoute() {
   const [brandedMode, setBrandedMode] = useState("comparisons_only");
   const [fitProfile, setFitProfile] = useState("aggressive");
   const [minEligibleTarget, setMinEligibleTarget] = useState("");
-  const [conversionIntents, setConversionIntents] = useState("");
+  const [conversionIntents, setConversionIntents] = useState<string[]>([]);
   const [includeTopics, setIncludeTopics] = useState("");
   const [excludeTopics, setExcludeTopics] = useState("");
   const [icpRoles, setIcpRoles] = useState("");
@@ -257,6 +300,15 @@ export default function ProjectSetupRoute() {
   function goBack() {
     setStepError(null);
     setStep((current) => Math.max(1, current - 1));
+  }
+
+  function toggleConversionIntent(value: string) {
+    setConversionIntents((current) => {
+      if (current.includes(value)) {
+        return current.filter((entry) => entry !== value);
+      }
+      return [...current, value];
+    });
   }
 
   return (
@@ -311,7 +363,7 @@ export default function ProjectSetupRoute() {
         <input type="hidden" name="strategy_branded_keyword_mode" value={brandedMode} />
         <input type="hidden" name="strategy_fit_threshold_profile" value={fitProfile} />
         <input type="hidden" name="strategy_min_eligible_target" value={minEligibleTarget} />
-        <input type="hidden" name="strategy_conversion_intents" value={conversionIntents} />
+        <input type="hidden" name="strategy_conversion_intents" value={conversionIntents.join(",")} />
         <input type="hidden" name="strategy_include_topics" value={includeTopics} />
         <input type="hidden" name="strategy_exclude_topics" value={excludeTopics} />
         <input type="hidden" name="strategy_icp_roles" value={icpRoles} />
@@ -486,16 +538,36 @@ export default function ProjectSetupRoute() {
                       />
                     </label>
 
-                    <label className="grid gap-1.5 text-sm md:col-span-2">
-                      <span className="font-semibold text-slate-700">Conversion intents</span>
-                      <textarea
-                        rows={2}
-                        value={conversionIntents}
-                        onChange={(event) => setConversionIntents(event.target.value)}
-                        placeholder="demo, trial"
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      />
-                    </label>
+                    <div className="grid gap-2 text-sm md:col-span-3">
+                      <span className="font-semibold text-slate-700">Intent focus</span>
+                      <p className="text-xs text-slate-500">
+                        Optional advanced override. Selected intents are sent as strategy.conversion_intents.
+                      </p>
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {INTENT_FOCUS_OPTIONS.map((option) => {
+                          const active = conversionIntents.includes(option.value);
+                          return (
+                            <label
+                              key={option.value}
+                              className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${
+                                active ? "border-[#2f6f71] bg-[#2f6f71]/10" : "border-slate-200 bg-white"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={active}
+                                onChange={() => toggleConversionIntent(option.value)}
+                                className="mt-1 h-4 w-4 rounded border-slate-300"
+                              />
+                              <span className="block">
+                                <span className="block font-semibold text-slate-800">{option.title}</span>
+                                <span className="block text-xs text-slate-500">{option.description}</span>
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
 
                     <label className="grid gap-1.5 text-sm md:col-span-2">
                       <span className="font-semibold text-slate-700">Include topics</span>

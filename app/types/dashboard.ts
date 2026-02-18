@@ -1,6 +1,6 @@
 import type { components } from "~/types/api.generated";
 
-export type SetupPreset = "traffic_growth" | "lead_gen" | "revenue_content";
+export type SetupPreset = "traffic_growth" | "lead_generation" | "revenue_content";
 
 export type DashboardRunState =
   | "queued"

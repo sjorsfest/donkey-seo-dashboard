@@ -112,6 +112,28 @@ export function parseMultilineList(input: string) {
     .filter(Boolean);
 }
 
+function humanizeReasonFragment(fragment: string) {
+  return fragment
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+export function formatDiscoveryRejectionReason(reason: string) {
+  const normalized = reason.trim();
+  if (!normalized) return "Unknown reason";
+
+  const lowercase = normalized.toLowerCase();
+  if (lowercase === "intent_mismatch_off_goal" || lowercase.startsWith("goal_intent_mismatch:")) {
+    return "Intent is off-goal for selected preset.";
+  }
+
+  const [primary, detail] = normalized.split(":", 2);
+  if (!detail) return humanizeReasonFragment(primary);
+  return `${humanizeReasonFragment(primary)}: ${humanizeReasonFragment(detail)}`;
+}
+
 export function normalizeDomain(input: string) {
   return input
     .trim()
@@ -135,9 +157,9 @@ export function suggestProjectNameFromDomain(domain: string) {
 }
 
 export function buildPresetGoals(preset: SetupPreset): ProjectGoals {
-  if (preset === "lead_gen") {
+  if (preset === "lead_generation") {
     return {
-      primary_objective: "conversions",
+      primary_objective: "lead_generation",
       secondary_goals: ["qualified_leads", "demo_requests"],
       priority_topics: ["solution comparisons", "buyer guides"],
       excluded_topics: ["broad awareness"],
@@ -146,7 +168,7 @@ export function buildPresetGoals(preset: SetupPreset): ProjectGoals {
 
   if (preset === "revenue_content") {
     return {
-      primary_objective: "revenue",
+      primary_objective: "revenue_content",
       secondary_goals: ["high_intent_sessions", "product_page_assists"],
       priority_topics: ["alternatives", "pricing context", "use case pages"],
       excluded_topics: ["general definitions"],
@@ -154,7 +176,7 @@ export function buildPresetGoals(preset: SetupPreset): ProjectGoals {
   }
 
   return {
-    primary_objective: "traffic",
+    primary_objective: "traffic_growth",
     secondary_goals: ["brand_visibility", "topical_authority"],
     priority_topics: ["foundational education", "how-to content"],
     excluded_topics: ["off-topic trends"],
@@ -162,7 +184,7 @@ export function buildPresetGoals(preset: SetupPreset): ProjectGoals {
 }
 
 export function buildPresetConstraints(preset: SetupPreset): ProjectConstraints {
-  if (preset === "lead_gen") {
+  if (preset === "lead_generation") {
     return {
       budget_tier: "medium",
       content_team_size: 2,

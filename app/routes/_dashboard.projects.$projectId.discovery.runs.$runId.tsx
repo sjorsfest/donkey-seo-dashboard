@@ -32,6 +32,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
 import { ApiClient } from "~/lib/api.server";
 import {
+  formatDiscoveryRejectionReason,
   formatDateTime,
   formatStatusLabel,
   getStatusBadgeClass,
@@ -470,6 +471,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         max_keyword_difficulty: 65,
         min_domain_diversity: 0.5,
         require_intent_match: true,
+        max_serp_servedness: 0.75,
+        max_serp_competitor_density: 0.7,
+        min_serp_intent_confidence: 0.35,
         auto_start_content: true,
       },
     };
@@ -1034,32 +1038,38 @@ export default function ProjectDiscoveryRunRoute() {
                           </div>
 
                           <div className="mt-3 space-y-2 text-xs">
-                            {group.snapshots.map((snapshot) => (
-                              <div key={snapshot.id} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="font-semibold text-slate-900">{snapshot.topic_name}</p>
-                                  <span
-                                    className={cn(
-                                      "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
-                                      isAcceptedDecision(snapshot.decision)
-                                        ? "border-emerald-300 bg-emerald-100 text-emerald-900"
-                                        : isRejectedDecision(snapshot.decision)
-                                          ? "border-rose-300 bg-rose-100 text-rose-900"
-                                          : "border-slate-300 bg-slate-100 text-slate-700"
-                                    )}
-                                  >
-                                    {snapshot.decision}
-                                  </span>
+                            {group.snapshots.map((snapshot) => {
+                              const formattedRejectionReasons = Array.from(
+                                new Set((snapshot.rejection_reasons ?? []).map(formatDiscoveryRejectionReason))
+                              );
+
+                              return (
+                                <div key={snapshot.id} className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="font-semibold text-slate-900">{snapshot.topic_name}</p>
+                                    <span
+                                      className={cn(
+                                        "rounded-full border px-2 py-0.5 text-[10px] font-semibold",
+                                        isAcceptedDecision(snapshot.decision)
+                                          ? "border-emerald-300 bg-emerald-100 text-emerald-900"
+                                          : isRejectedDecision(snapshot.decision)
+                                            ? "border-rose-300 bg-rose-100 text-rose-900"
+                                            : "border-slate-300 bg-slate-100 text-slate-700"
+                                      )}
+                                    >
+                                      {snapshot.decision}
+                                    </span>
+                                  </div>
+                                  <p className="text-slate-600">
+                                    Fit: {snapshot.fit_score ?? "n/a"} · KD: {snapshot.keyword_difficulty ?? "n/a"} ·
+                                    Diversity: {snapshot.domain_diversity ?? "n/a"}
+                                  </p>
+                                  {formattedRejectionReasons.length > 0 ? (
+                                    <p className="text-rose-700">Reasons: {formattedRejectionReasons.join(", ")}</p>
+                                  ) : null}
                                 </div>
-                                <p className="text-slate-600">
-                                  Fit: {snapshot.fit_score ?? "n/a"} · KD: {snapshot.keyword_difficulty ?? "n/a"} · Diversity:{" "}
-                                  {snapshot.domain_diversity ?? "n/a"}
-                                </p>
-                                {snapshot.rejection_reasons && snapshot.rejection_reasons.length > 0 ? (
-                                  <p className="text-rose-700">Reasons: {snapshot.rejection_reasons.join(", ")}</p>
-                                ) : null}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       );
