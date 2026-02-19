@@ -1,3 +1,4 @@
+import type { ClassifiedPipelineRun } from "~/lib/pipeline-phase";
 import type { components } from "~/types/api.generated";
 import type { DashboardTab, SetupPreset, StepArtifactContext } from "~/types/dashboard";
 
@@ -181,6 +182,126 @@ export function buildPresetGoals(preset: SetupPreset): ProjectGoals {
     priority_topics: ["foundational education", "how-to content"],
     excluded_topics: ["off-topic trends"],
   };
+}
+
+export function formatStepName(value: string | null | undefined) {
+  if (!value) return "Unnamed Step";
+  return value
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
+    .join(" ");
+}
+
+export function formatStepItems(step: StepExecutionResponse) {
+  return step.items_total === null
+    ? `${step.items_processed} items processed`
+    : `${step.items_processed}/${step.items_total} items processed`;
+}
+
+export function getStepExecutionTimestamp(step: StepExecutionResponse) {
+  const value = step.completed_at ?? step.started_at;
+  if (!value) return 0;
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+export function calculateOverallProgress(steps: StepExecutionResponse[]) {
+  if (steps.length === 0) return 0;
+  const total = steps.reduce((acc, step) => acc + step.progress_percent, 0);
+  return Math.round(total / steps.length);
+}
+
+export function formatTimelineTimestamp(value: string | null | undefined) {
+  if (!value) return "Unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export type IterationGroup = {
+  iterationIndex: number;
+  executions: StepExecutionResponse[];
+  isActive: boolean;
+  isFailed: boolean;
+};
+
+export function groupExecutionsIntoIterations(stepExecutions: StepExecutionResponse[]): IterationGroup[] {
+  if (stepExecutions.length === 0) return [];
+
+  const sorted = stepExecutions.slice().sort((a, b) => {
+    const tsA = a.started_at ? new Date(a.started_at).getTime() : 0;
+    const tsB = b.started_at ? new Date(b.started_at).getTime() : 0;
+    return tsA - tsB;
+  });
+
+  const iterations: StepExecutionResponse[][] = [[]];
+  let prevStepNumber = -1;
+
+  for (const exec of sorted) {
+    if (exec.step_number <= prevStepNumber && iterations[iterations.length - 1]!.length > 0) {
+      iterations.push([]);
+    }
+    iterations[iterations.length - 1]!.push(exec);
+    prevStepNumber = exec.step_number;
+  }
+
+  return iterations.map((executions, index) => {
+    const sortedByStep = executions.slice().sort((a, b) => a.step_number - b.step_number);
+    const hasActive = sortedByStep.some((e) => isRunActive(e.status));
+    const hasFailed = sortedByStep.some((e) => isRunFailed(e.status));
+
+    return {
+      iterationIndex: index,
+      executions: sortedByStep,
+      isActive: hasActive,
+      isFailed: !hasActive && hasFailed,
+    };
+  });
+}
+
+export function getTimelineDotClass(status: string | null | undefined) {
+  const normalized = String(status ?? "").toLowerCase();
+  if (normalized === "running" || normalized === "in_progress" || normalized === "queued") {
+    return "bg-amber-500";
+  }
+  if (normalized === "failed" || normalized === "error") {
+    return "bg-rose-500";
+  }
+  if (normalized === "completed" || normalized === "success" || normalized === "succeeded" || normalized === "done") {
+    return "bg-emerald-500";
+  }
+  return "bg-slate-400";
+}
+
+export function toPhaseBadgeClass(phase: ClassifiedPipelineRun["phase"]) {
+  if (phase === "discovery") return "border-teal-300 bg-teal-100 text-teal-900";
+  if (phase === "creation") return "border-indigo-300 bg-indigo-100 text-indigo-900";
+  if (phase === "mixed") return "border-amber-300 bg-amber-100 text-amber-900";
+  return "border-slate-300 bg-slate-100 text-slate-700";
+}
+
+export function toPhaseLabel(phase: ClassifiedPipelineRun["phase"]) {
+  if (phase === "mixed") return "Mixed";
+  if (phase === "unknown") return "Unknown";
+  return phase === "discovery" ? "Discovery" : "Creation";
+}
+
+export function isAcceptedDecision(decision: string | null | undefined) {
+  const normalized = String(decision ?? "").toLowerCase();
+  return normalized.includes("accept") || normalized.includes("approved") || normalized.includes("selected");
+}
+
+export function isRejectedDecision(decision: string | null | undefined) {
+  const normalized = String(decision ?? "").toLowerCase();
+  return normalized.includes("reject") || normalized.includes("exclude") || normalized.includes("deny");
 }
 
 export function buildPresetConstraints(preset: SetupPreset): ProjectConstraints {

@@ -19,6 +19,14 @@ export default [
     ),
     route("projects/:projectId/discovery", "routes/_dashboard.projects.$projectId.discovery.tsx"),
     route(
+      "projects/:projectId/discovery/keywords",
+      "routes/_dashboard.projects.$projectId.discovery.keywords.tsx"
+    ),
+    route(
+      "projects/:projectId/discovery/topics",
+      "routes/_dashboard.projects.$projectId.discovery.topics.tsx"
+    ),
+    route(
       "projects/:projectId/discovery/runs/:runId",
       "routes/_dashboard.projects.$projectId.discovery.runs.$runId.tsx"
     ),

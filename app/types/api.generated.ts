@@ -227,7 +227,7 @@ export interface paths {
         put?: never;
         /**
          * Start pipeline run
-         * @description Create a new pipeline run for a project and queue background execution for the requested step range.
+         * @description Create a new module pipeline run and queue background execution.
          */
         post: operations["start_pipeline_api_v1_pipeline__project_id__start_post"];
         delete?: never;
@@ -243,10 +243,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List pipeline runs
-         * @description Return recent pipeline runs for a project, including step execution data, limited by the provided count.
-         */
+        /** List pipeline runs */
         get: operations["list_pipeline_runs_api_v1_pipeline__project_id__runs_get"];
         put?: never;
         post?: never;
@@ -263,10 +260,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get pipeline run
-         * @description Return full details for a specific pipeline run in the project.
-         */
+        /** Get pipeline run */
         get: operations["get_pipeline_run_api_v1_pipeline__project_id__runs__run_id__get"];
         put?: never;
         post?: never;
@@ -283,10 +277,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get pipeline progress
-         * @description Return real-time pipeline progress including run status, active step, and per-step execution details.
-         */
+        /** Get pipeline progress */
         get: operations["get_pipeline_progress_api_v1_pipeline__project_id__runs__run_id__progress_get"];
         put?: never;
         post?: never;
@@ -303,10 +294,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * List discovery snapshots
-         * @description Return per-iteration topic decision snapshots (accepted/rejected) for a discovery-loop run.
-         */
+        /** List discovery snapshots */
         get: operations["list_discovery_snapshots_api_v1_pipeline__project_id__runs__run_id__discovery_snapshots_get"];
         put?: never;
         post?: never;
@@ -325,11 +313,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Pause running pipeline
-         * @description Pause the currently running pipeline run for the project.
-         */
+        /** Pause running pipeline */
         post: operations["pause_pipeline_api_v1_pipeline__project_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pipeline/{project_id}/runs/{run_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pause run by id */
+        post: operations["pause_pipeline_run_api_v1_pipeline__project_id__runs__run_id__pause_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -345,10 +347,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Resume paused pipeline
-         * @description Queue background work to resume a paused pipeline run.
-         */
+        /** Resume paused pipeline */
         post: operations["resume_pipeline_api_v1_pipeline__project_id__resume__run_id__post"];
         delete?: never;
         options?: never;
@@ -1064,7 +1063,7 @@ export interface components {
         };
         /**
          * ContentPipelineConfig
-         * @description Configuration for content-production mode.
+         * @description Configuration for content module.
          */
         ContentPipelineConfig: {
             /**
@@ -1107,10 +1106,28 @@ export interface components {
              * @default 14
              */
             llm_timing_flex_days: number;
+            /**
+             * Include Zero Data Topics
+             * @description Reserve part of Step 12 capacity for high-fit topics whose primary keyword has missing demand metrics.
+             * @default true
+             */
+            include_zero_data_topics: boolean;
+            /**
+             * Zero Data Topic Share
+             * @description Max share of Step 12 brief slots reserved for high-fit zero-data topics (0.0-0.5).
+             * @default 0.2
+             */
+            zero_data_topic_share: number;
+            /**
+             * Zero Data Fit Score Min
+             * @description Minimum fit_score required for zero-data topic inclusion.
+             * @default 0.65
+             */
+            zero_data_fit_score_min: number;
         };
         /**
          * DiscoveryLoopConfig
-         * @description Configuration for discovery-loop mode.
+         * @description Configuration for discovery module.
          */
         DiscoveryLoopConfig: {
             /**
@@ -1167,11 +1184,11 @@ export interface components {
              */
             min_serp_intent_confidence: number;
             /**
-             * Auto Start Content
-             * @description Automatically start content_production when discovery completes.
+             * Auto Dispatch Content Tasks
+             * @description Dispatch content tasks when topics are accepted during discovery.
              * @default true
              */
-            auto_start_content: boolean;
+            auto_dispatch_content_tasks: boolean;
         };
         /**
          * DiscoveryTopicSnapshotResponse
@@ -1478,6 +1495,12 @@ export interface components {
             id: string;
             /** Project Id */
             project_id: string;
+            /** Pipeline Module */
+            pipeline_module: string;
+            /** Parent Run Id */
+            parent_run_id: string | null;
+            /** Source Topic Id */
+            source_topic_id: string | null;
             /** Status */
             status: string;
             /** Started At */
@@ -1546,9 +1569,9 @@ export interface components {
          * PipelineStartRequest
          * @description Schema for starting a pipeline run.
          * @example {
-         *       "end_step": 14,
-         *       "mode": "full",
-         *       "start_step": 0,
+         *       "end_step": 8,
+         *       "mode": "discovery",
+         *       "start_step": 1,
          *       "strategy": {
          *         "fit_threshold_profile": "aggressive"
          *       }
@@ -1565,7 +1588,7 @@ export interface components {
          *         ]
          *       },
          *       "discovery": {
-         *         "auto_start_content": true,
+         *         "auto_dispatch_content_tasks": true,
          *         "max_iterations": 3,
          *         "max_keyword_difficulty": 65,
          *         "max_serp_competitor_density": 0.7,
@@ -1576,7 +1599,7 @@ export interface components {
          *         "require_intent_match": true,
          *         "require_serp_gate": true
          *       },
-         *       "mode": "discovery_loop",
+         *       "mode": "discovery",
          *       "strategy": {
          *         "exclude_topics": [
          *           "medical advice"
@@ -1599,30 +1622,27 @@ export interface components {
          *           3
          *         ]
          *       },
-         *       "mode": "content_production"
+         *       "mode": "content"
          *     }
          */
         PipelineStartRequest: {
             /**
              * Mode
-             * @description Pipeline orchestration mode: full range execution, adaptive discovery loop, or content-only production.
-             * @default full
+             * @description Pipeline orchestration mode: discovery or content.
+             * @default discovery
              * @enum {string}
              */
-            mode: "full" | "discovery_loop" | "content_production";
-            /**
-             * Start Step
-             * @default 0
-             */
-            start_step: number;
+            mode: "discovery" | "content";
+            /** Start Step */
+            start_step?: number | null;
             /** End Step */
             end_step?: number | null;
             /** Skip Steps */
             skip_steps?: number[] | null;
             strategy?: components["schemas"]["PipelineRunStrategy"] | null;
-            /** @description Optional discovery loop controls (used when mode=discovery_loop). */
+            /** @description Optional discovery controls (used when mode=discovery). */
             discovery?: components["schemas"]["DiscoveryLoopConfig"] | null;
-            /** @description Optional content pipeline controls (used in content-related modes). */
+            /** @description Optional content controls (used when mode=content). */
             content?: components["schemas"]["ContentPipelineConfig"] | null;
         };
         /**
@@ -1848,6 +1868,10 @@ export interface components {
             stage?: string | null;
             /** Project Id */
             project_id?: string | null;
+            /** Pipeline Module */
+            pipeline_module?: string | null;
+            /** Source Topic Id */
+            source_topic_id?: string | null;
             /** Current Step */
             current_step?: number | null;
             /** Current Step Name */
@@ -2788,6 +2812,40 @@ export interface operations {
             header?: never;
             path: {
                 project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_pipeline_run_api_v1_pipeline__project_id__runs__run_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
             };
             cookie?: never;
         };
