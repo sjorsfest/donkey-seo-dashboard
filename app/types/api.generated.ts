@@ -188,6 +188,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/onboarding/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bootstrap onboarding project
+         * @description Create a project and immediately queue setup pipeline steps 0-1 for domain + brand extraction.
+         */
+        post: operations["bootstrap_onboarding_project_api_v1_projects_onboarding_bootstrap_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{project_id}": {
         parameters: {
             query?: never;
@@ -711,6 +731,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/brand/{project_id}/visual-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get brand visual context
+         * @description Return reusable visual context for image generation.
+         */
+        get: operations["get_brand_visual_context_api_v1_brand__project_id__visual_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brand/{project_id}/assets/ingest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ingest brand assets from URLs
+         * @description Ingest manually supplied asset URLs into private storage.
+         */
+        post: operations["ingest_brand_assets_api_v1_brand__project_id__assets_ingest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brand/{project_id}/assets/{asset_id}/signed-read-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get signed read URL for a private brand asset
+         * @description Mint a short-lived signed URL for a brand asset object key.
+         */
+        post: operations["get_brand_asset_signed_read_url_api_v1_brand__project_id__assets__asset_id__signed_read_url_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brand/{project_id}/visual-style": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Patch visual style guide and prompt contract
+         * @description Apply manual overrides to visual style fields.
+         */
+        patch: operations["patch_brand_visual_style_api_v1_brand__project_id__visual_style_patch"];
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -735,6 +835,165 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * BrandAssetIngestRequest
+         * @description Manual URL-based asset ingestion request.
+         */
+        BrandAssetIngestRequest: {
+            /** Source Urls */
+            source_urls: string[];
+            /**
+             * Role
+             * @default reference
+             */
+            role: string;
+        };
+        /**
+         * BrandAssetIngestResponse
+         * @description Manual ingestion response payload.
+         */
+        BrandAssetIngestResponse: {
+            /** Ingested Count */
+            ingested_count: number;
+            /** Total Assets */
+            total_assets: number;
+            /** Brand Assets */
+            brand_assets: components["schemas"]["BrandAssetMetadata"][];
+        };
+        /**
+         * BrandAssetMetadata
+         * @description Stored private brand asset metadata (no signed URLs).
+         */
+        BrandAssetMetadata: {
+            /** Asset Id */
+            asset_id: string;
+            /** Object Key */
+            object_key: string;
+            /** Sha256 */
+            sha256: string;
+            /** Mime Type */
+            mime_type: string;
+            /** Byte Size */
+            byte_size: number;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Role */
+            role: string;
+            /** Role Confidence */
+            role_confidence: number;
+            /** Source Url */
+            source_url: string;
+            /** Origin */
+            origin: string;
+            /** Ingested At */
+            ingested_at: string;
+        };
+        /**
+         * BrandAssetSignedReadUrlResponse
+         * @description Signed private object read URL response.
+         */
+        BrandAssetSignedReadUrlResponse: {
+            /** Asset Id */
+            asset_id: string;
+            /** Object Key */
+            object_key: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Signed Url */
+            signed_url: string;
+        };
+        /**
+         * BrandProductServiceMetadata
+         * @description Structured product/service metadata extracted in Step 1.
+         */
+        BrandProductServiceMetadata: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Target Audience */
+            target_audience?: string | null;
+            /** Core Benefits */
+            core_benefits?: string[];
+        };
+        /**
+         * BrandSuggestedICPNiche
+         * @description Suggested ICP niche returned from Step 1 recommender.
+         */
+        BrandSuggestedICPNiche: {
+            /** Niche Name */
+            niche_name: string;
+            /** Target Roles */
+            target_roles?: string[];
+            /** Target Industries */
+            target_industries?: string[];
+            /** Company Sizes */
+            company_sizes?: string[];
+            /** Primary Pains */
+            primary_pains?: string[];
+            /** Desired Outcomes */
+            desired_outcomes?: string[];
+            /** Likely Objections */
+            likely_objections?: string[];
+            /** Why Good Fit */
+            why_good_fit?: string | null;
+        };
+        /**
+         * BrandVisualContextResponse
+         * @description Brand visual context used for image generation.
+         */
+        BrandVisualContextResponse: {
+            /** Project Id */
+            project_id: string;
+            /** Company Name */
+            company_name?: string | null;
+            /** Tagline */
+            tagline?: string | null;
+            /** Products Services */
+            products_services?: components["schemas"]["BrandProductServiceMetadata"][];
+            /** Target Roles */
+            target_roles?: string[];
+            /** Target Industries */
+            target_industries?: string[];
+            /** Differentiators */
+            differentiators?: string[];
+            /** Suggested Icp Niches */
+            suggested_icp_niches?: components["schemas"]["BrandSuggestedICPNiche"][];
+            /** Extraction Confidence */
+            extraction_confidence?: number | null;
+            /** Brand Assets */
+            brand_assets?: components["schemas"]["BrandAssetMetadata"][];
+            /** Visual Style Guide */
+            visual_style_guide?: {
+                [key: string]: unknown;
+            };
+            /** Visual Prompt Contract */
+            visual_prompt_contract?: {
+                [key: string]: unknown;
+            };
+            /** Visual Extraction Confidence */
+            visual_extraction_confidence?: number | null;
+            /** Visual Last Synced At */
+            visual_last_synced_at?: string | null;
+        };
+        /**
+         * BrandVisualStylePatchRequest
+         * @description Partial visual style/prompt contract override payload.
+         */
+        BrandVisualStylePatchRequest: {
+            /** Visual Style Guide */
+            visual_style_guide?: {
+                [key: string]: unknown;
+            } | null;
+            /** Visual Prompt Contract */
+            visual_prompt_contract?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /**
          * ContentArticleDetailResponse
          * @description Full content article contract.
@@ -1571,10 +1830,15 @@ export interface components {
          * @example {
          *       "end_step": 8,
          *       "mode": "discovery",
-         *       "start_step": 1,
+         *       "start_step": 2,
          *       "strategy": {
          *         "fit_threshold_profile": "aggressive"
          *       }
+         *     }
+         * @example {
+         *       "end_step": 1,
+         *       "mode": "setup",
+         *       "start_step": 0
          *     }
          * @example {
          *       "content": {
@@ -1628,11 +1892,11 @@ export interface components {
         PipelineStartRequest: {
             /**
              * Mode
-             * @description Pipeline orchestration mode: discovery or content.
+             * @description Pipeline orchestration mode: setup, discovery, or content.
              * @default discovery
              * @enum {string}
              */
-            mode: "discovery" | "content";
+            mode: "setup" | "discovery" | "content";
             /** Start Step */
             start_step?: number | null;
             /** End Step */
@@ -1740,6 +2004,44 @@ export interface components {
             page: number;
             /** Page Size */
             page_size: number;
+        };
+        /**
+         * ProjectOnboardingBootstrapRequest
+         * @description Schema for onboarding bootstrap (create project + start setup pipeline).
+         */
+        ProjectOnboardingBootstrapRequest: {
+            /** Name */
+            name: string;
+            /** Domain */
+            domain: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Primary Language
+             * @default en
+             */
+            primary_language: string;
+            /**
+             * Primary Locale
+             * @default en-US
+             */
+            primary_locale: string;
+            /** Secondary Locales */
+            secondary_locales?: string[] | null;
+            goals?: components["schemas"]["ProjectGoals"] | null;
+            constraints?: components["schemas"]["ProjectConstraints"] | null;
+            settings?: components["schemas"]["ProjectSettings"] | null;
+            strategy?: components["schemas"]["PipelineRunStrategy"] | null;
+        };
+        /**
+         * ProjectOnboardingBootstrapResponse
+         * @description Schema returned after onboarding bootstrap kickoff.
+         */
+        ProjectOnboardingBootstrapResponse: {
+            project: components["schemas"]["ProjectResponse"];
+            /** Setup Run Id */
+            setup_run_id: string;
+            setup_task: components["schemas"]["TaskStatusResponse"];
         };
         /**
          * ProjectResponse
@@ -2534,6 +2836,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bootstrap_onboarding_project_api_v1_projects_onboarding_bootstrap_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectOnboardingBootstrapRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectOnboardingBootstrapResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3738,6 +4073,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContentArticleVersionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_brand_visual_context_api_v1_brand__project_id__visual_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandVisualContextResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_brand_assets_api_v1_brand__project_id__assets_ingest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandAssetIngestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandAssetIngestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_brand_asset_signed_read_url_api_v1_brand__project_id__assets__asset_id__signed_read_url_post: {
+        parameters: {
+            query?: {
+                ttl_seconds?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandAssetSignedReadUrlResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_brand_visual_style_api_v1_brand__project_id__visual_style_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandVisualStylePatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandVisualContextResponse"];
                 };
             };
             /** @description Validation Error */

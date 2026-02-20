@@ -11,7 +11,6 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
-  CirclePlus,
   Compass,
   LogOut,
   FolderKanban,
@@ -38,9 +37,9 @@ type NavItem = {
   colorClass: string;
   path?: string;
   getPath?: (context: NavContext) => string | null;
+  isActive?: (pathname: string) => boolean;
   matchExact?: boolean;
   hideOnMobile?: boolean;
-  action?: "logout";
   lockedMessage?: string;
   planLockedMessage?: string;
   requiresPlan?: boolean;
@@ -71,15 +70,7 @@ const navItems: NavItem[] = [
     icon: FolderKanban,
     colorClass: "text-primary-700",
     path: "/projects",
-    matchExact: true,
-  },
-  {
-    id: "new-project",
-    label: "New Project",
-    icon: CirclePlus,
-    colorClass: "text-secondary-600",
-    path: "/projects/new",
-    matchExact: true,
+    isActive: (pathname) => pathname === "/projects",
   },
   {
     id: "discovery",
@@ -87,17 +78,17 @@ const navItems: NavItem[] = [
     icon: Compass,
     colorClass: "text-emerald-600",
     getPath: (context) =>
-      context.activeProjectId ? `/projects/${context.activeProjectId}/discovery` : null,
-    lockedMessage: "Open a project to unlock Discovery.",
+      context.activeProjectId ? `/projects/${context.activeProjectId}/discovery` : "/projects",
+    isActive: (pathname) => pathname.includes("/discovery"),
   },
   {
-    id: "creation",
-    label: "Creation",
+    id: "content",
+    label: "Content",
     icon: PenSquare,
     colorClass: "text-orange-500",
     getPath: (context) =>
-      context.activeProjectId ? `/projects/${context.activeProjectId}/creation` : null,
-    lockedMessage: "Open a project to unlock Creation.",
+      context.activeProjectId ? `/projects/${context.activeProjectId}/creation` : "/projects",
+    isActive: (pathname) => pathname.includes("/creation"),
   },
   {
     id: "insights",
@@ -107,15 +98,6 @@ const navItems: NavItem[] = [
     path: "/projects",
     requiresPlan: true,
     planLockedMessage: "Upgrade to Pro to unlock Insights.",
-    hideOnMobile: true,
-  },
-  {
-    id: "logout",
-    label: "Log Out",
-    icon: LogOut,
-    colorClass: "text-rose-600",
-    action: "logout",
-    hideOnMobile: true,
   },
 ];
 
@@ -153,17 +135,23 @@ export default function DashboardLayout() {
         damping: 30,
       };
 
+  const wordmarkStyle = {
+    textShadow: "-1px -1px 0 #111827, 1px -1px 0 #111827, -1px 1px 0 #111827, 1px 1px 0 #111827",
+  };
+
   const renderNavItem = (item: NavItem, isMobile = false) => {
     const href = item.path ?? item.getPath?.(navContext) ?? null;
     const isPlanLocked = Boolean(item.requiresPlan && !navContext.hasProPlan);
-    const isLocked = !isPlanLocked && !item.action && !href;
+    const isLocked = !isPlanLocked && !href;
     const isDisabled = isPlanLocked || isLocked;
 
-    const isActive = href
-      ? item.matchExact
-        ? location.pathname === href
-        : location.pathname.startsWith(href)
-      : false;
+    const isActive = item.isActive
+      ? item.isActive(location.pathname)
+      : href
+        ? item.matchExact
+          ? location.pathname === href
+          : location.pathname.startsWith(href)
+        : false;
 
     const message = isPlanLocked
       ? item.planLockedMessage ?? "Upgrade required to access this section."
@@ -254,16 +242,6 @@ export default function DashboardLayout() {
       );
     }
 
-    if (item.action === "logout") {
-      return (
-        <Form key={item.id} method="post" action="/logout" className={isMobile ? "flex-1 flex justify-center" : "block w-full"}>
-          <button type="submit" className={cn("w-full text-left", baseItemClass)}>
-            {navContent}
-          </button>
-        </Form>
-      );
-    }
-
     if (!href) return null;
 
     return (
@@ -280,20 +258,24 @@ export default function DashboardLayout() {
         style={{ boxShadow: "4px 4px 0px 0px #1a1a1a" }}
       >
         <div className="border-b border-border/60 p-6">
-          <Link to="/projects" className="flex items-center space-x-[-1rem]">
+          <Link to="/projects" className="flex items-center gap-0">
             <div className="group relative">
               <img
                 src="/static/donkey.png"
                 alt="Donkey SEO"
                 className="h-16 w-16 object-contain transition-transform duration-300 group-hover:scale-110"
               />
-              <div className="absolute -right-1 -bottom-1 h-4 w-4 rounded-full border-2 border-white bg-green-400 animate-bounce-subtle" />
+              <div className="absolute -right-1 -bottom-1 h-4 w-4 rounded-full border-2 border-white bg-secondary animate-bounce-subtle" />
             </div>
             <div className="flex flex-col items-center justify-center">
-              <h1 className="font-display text-primary-500 select-none text-center text-4xl font-bold leading-[0.8] tracking-tighter">
-                Donkey SEO
+              <h1
+                className="font-display select-none text-center text-4xl font-bold leading-[0.8] tracking-tight text-primary-500"
+                style={wordmarkStyle}
+              >
+                <span className="block">Donkey</span>
+                <span className="block">SEO</span>
               </h1>
-              <span className="mt-2 -mb-2 text-xs font-medium text-muted-foreground">Starter</span>
+              <span className="mt-1 -mb-2 text-xs font-medium text-muted-foreground">Starter</span>
             </div>
           </Link>
         </div>
@@ -304,7 +286,7 @@ export default function DashboardLayout() {
 
         <div className="border-t border-border/60 bg-muted/20 p-4">
           <div className="flex items-center gap-3 rounded-xl p-2 transition-colors hover:bg-white/60">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-black bg-gradient-to-br from-secondary-700 to-secondary-300 text-xs font-bold text-white shadow-[2px_2px_0_#1a1a1a]">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-black bg-gradient-to-br from-secondary-700 to-secondary-300 text-xs font-bold text-primary-950 shadow-[2px_2px_0_#1a1a1a]">
               {(user.full_name?.[0] ?? user.email[0]).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
@@ -330,7 +312,13 @@ export default function DashboardLayout() {
         <Link to="/projects" className="flex items-center gap-2">
           <img src="/static/donkey.png" alt="Donkey SEO" className="h-10 w-10 object-contain" />
           <div>
-            <h1 className="font-display text-primary-500 text-xl font-bold tracking-tighter">Donkey SEO</h1>
+            <h1
+              className="font-display text-primary-500 text-[1.1rem] font-bold leading-[0.85] tracking-tight"
+              style={wordmarkStyle}
+            >
+              <span className="block">Donkey</span>
+              <span className="block">SEO</span>
+            </h1>
             <span className="text-[10px] font-medium text-muted-foreground">Pipeline Dashboard</span>
           </div>
         </Link>

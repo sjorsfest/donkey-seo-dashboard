@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { motion } from "framer-motion";
 import {
   Form,
   Link,
@@ -10,24 +11,29 @@ import {
   useNavigate,
   useRevalidator,
 } from "react-router";
+import { Layers } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.creation.runs.$runId";
 import { Button } from "~/components/ui/button";
+import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
 import { Select } from "~/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "~/components/ui/tabs";
+import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
+  calculateOverallProgress,
   formatDateTime,
   formatStatusLabel,
+  formatStepName,
+  formatTimelineTimestamp,
   getStatusBadgeClass,
+  getTimelineDotClass,
   isRunActive,
   isRunFailed,
   isRunPaused,
-  summarizeSteps,
 } from "~/lib/dashboard";
-import { classifyPipelineRuns, fetchJson } from "~/lib/pipeline-run.server";
-import { isPhaseMatch, pickLatestRunForPhase, type ClassifiedPipelineRun } from "~/lib/pipeline-phase";
+import { filterRunsByModule, isRunInModule, pickLatestRunForModule, sortPipelineRunsNewest } from "~/lib/pipeline-module";
+import { fetchJson } from "~/lib/pipeline-run.server";
 import { cn } from "~/lib/utils";
 import type { components } from "~/types/api.generated";
 
@@ -38,19 +44,17 @@ type PipelineProgressResponse = components["schemas"]["PipelineProgressResponse"
 type StepExecutionResponse = components["schemas"]["StepExecutionResponse"];
 type ContentBriefListResponse = components["schemas"]["ContentBriefListResponse"];
 type ContentBriefResponse = components["schemas"]["ContentBriefResponse"];
-type ContentBriefDetailResponse = components["schemas"]["ContentBriefDetailResponse"];
-type WriterInstructionsResponse = components["schemas"]["WriterInstructionsResponse"];
+type ContentArticleListResponse = components["schemas"]["ContentArticleListResponse"];
+type ContentArticleResponse = components["schemas"]["ContentArticleResponse"];
 type TopicResponse = components["schemas"]["TopicResponse"];
 
 type LoaderData = {
   project: ProjectResponse;
-  runs: ClassifiedPipelineRun[];
+  runs: PipelineRunResponse[];
   selectedRun: PipelineRunResponse;
   progress: PipelineProgressResponse | null;
   briefs: ContentBriefResponse[];
-  selectedBriefId: string | null;
-  selectedBrief: ContentBriefDetailResponse | null;
-  selectedBriefInstructions: WriterInstructionsResponse | null;
+  articles: ContentArticleResponse[];
   rankedTopics: TopicResponse[];
 };
 
@@ -58,47 +62,14 @@ type ActionData = {
   error?: string;
 };
 
-const BRIEF_PATH_PATTERN = /\/briefs\/([^/]+)$/;
-
-function parseBriefFromPathname(pathname: string) {
-  const match = pathname.match(BRIEF_PATH_PATTERN);
-  if (!match) return { hasBriefPath: false, briefId: null as string | null };
-
-  const raw = match[1] ?? "";
-  const decoded = decodeURIComponent(raw).trim();
-  if (!decoded) return { hasBriefPath: true, briefId: null as string | null };
-
-  return { hasBriefPath: true, briefId: decoded };
-}
-
-function toPhaseBadgeClass(phase: ClassifiedPipelineRun["phase"]) {
-  if (phase === "discovery") return "border-teal-300 bg-teal-100 text-teal-900";
-  if (phase === "creation") return "border-indigo-300 bg-indigo-100 text-indigo-900";
-  if (phase === "mixed") return "border-amber-300 bg-amber-100 text-amber-900";
-  return "border-slate-300 bg-slate-100 text-slate-700";
-}
-
-function toPhaseLabel(phase: ClassifiedPipelineRun["phase"]) {
-  if (phase === "mixed") return "Mixed";
-  if (phase === "unknown") return "Unknown";
-  return phase === "discovery" ? "Discovery" : "Creation";
-}
-
-function formatStepName(value: string | null | undefined) {
-  if (!value) return "Unnamed Step";
-  return value
-    .replace(/[_-]+/g, " ")
-    .trim()
-    .split(/\s+/)
-    .map((token) => token.charAt(0).toUpperCase() + token.slice(1).toLowerCase())
-    .join(" ");
-}
-
-function calculateOverallProgress(steps: StepExecutionResponse[]) {
-  if (steps.length === 0) return 0;
-  const total = steps.reduce((acc, step) => acc + step.progress_percent, 0);
-  return Math.round(total / steps.length);
-}
+type TopicGroup = {
+  topic: TopicResponse | null;
+  topicId: string;
+  briefs: Array<{
+    brief: ContentBriefResponse;
+    article: ContentArticleResponse | null;
+  }>;
+};
 
 async function handleUnauthorized(api: ApiClient) {
   return redirect("/login", {
@@ -116,12 +87,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Missing route parameters.", { status: 400 });
   }
 
-  const url = new URL(request.url);
-  const briefFromPath = parseBriefFromPathname(url.pathname);
-  if (briefFromPath.hasBriefPath && briefFromPath.briefId === null) {
-    throw new Response("Invalid brief id.", { status: 400 });
-  }
-
   const api = new ApiClient(request);
 
   const projectResult = await fetchJson<ProjectResponse>(api, `/projects/${projectId}`);
@@ -133,15 +98,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
   if (runsResult.unauthorized) return handleUnauthorized(api);
 
-  const rawRuns = runsResult.ok && runsResult.data ? runsResult.data : [];
-  const classified = await classifyPipelineRuns(api, projectId, rawRuns);
-  if (classified.unauthorized) return handleUnauthorized(api);
+  const rawRuns = sortPipelineRunsNewest(runsResult.ok && runsResult.data ? runsResult.data : []);
+  const runs = filterRunsByModule(rawRuns, "content");
+  const requestedRun = rawRuns.find((entry) => entry.id === runId) ?? null;
 
-  const selectedRunSummary = classified.runs.find((entry) => entry.run.id === runId) ?? null;
+  if (requestedRun && isRunInModule(requestedRun, "discovery")) {
+    return redirect(`/projects/${projectId}/discovery/runs/${requestedRun.id}`, {
+      headers: await api.commit(),
+    });
+  }
+
+  const selectedRunSummary = runs.find((entry) => entry.id === runId) ?? null;
   if (!selectedRunSummary) {
-    const preferred = pickLatestRunForPhase(classified.runs, "creation");
+    const preferred = pickLatestRunForModule(rawRuns, "content");
     if (preferred) {
-      return redirect(`/projects/${projectId}/creation/runs/${preferred.run.id}`, {
+      return redirect(`/projects/${projectId}/creation/runs/${preferred.id}`, {
         headers: await api.commit(),
       });
     }
@@ -149,22 +120,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Pipeline run not found.", { status: 404 });
   }
 
-  if (!isPhaseMatch(selectedRunSummary.phase, "creation")) {
-    const preferred = pickLatestRunForPhase(classified.runs, "creation");
-    if (preferred && preferred.run.id !== selectedRunSummary.run.id) {
-      return redirect(`/projects/${projectId}/creation/runs/${preferred.run.id}`, {
-        headers: await api.commit(),
-      });
-    }
-  }
-
-  const [selectedRunResult, briefsResult, rankedTopicsResult] = await Promise.all([
+  const [selectedRunResult, briefsResult, articlesResult, rankedTopicsResult] = await Promise.all([
     fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${runId}`),
     fetchJson<ContentBriefListResponse>(api, `/content/${projectId}/briefs?page=1&page_size=100`),
+    fetchJson<ContentArticleListResponse>(api, `/content/${projectId}/articles?page=1&page_size=100`),
     fetchJson<TopicResponse[]>(api, `/topics/${projectId}/ranked?limit=20`),
   ]);
 
-  if ([selectedRunResult, briefsResult, rankedTopicsResult].some((result) => result.unauthorized)) {
+  if ([selectedRunResult, briefsResult, articlesResult, rankedTopicsResult].some((r) => r.unauthorized)) {
     return handleUnauthorized(api);
   }
 
@@ -173,6 +136,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const selectedRun = selectedRunResult.data;
+  if (!isRunInModule(selectedRun, "content")) {
+    if (isRunInModule(selectedRun, "discovery")) {
+      return redirect(`/projects/${projectId}/discovery/runs/${selectedRun.id}`, {
+        headers: await api.commit(),
+      });
+    }
+
+    throw new Response("Run is not a content-module run.", { status: 409 });
+  }
 
   let progress: PipelineProgressResponse | null = null;
   if (isRunActive(selectedRun.status)) {
@@ -184,69 +156,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const briefs = briefsResult.ok && briefsResult.data ? briefsResult.data.items ?? [] : [];
-  const requestedBriefId = briefFromPath.briefId;
-
-  if (briefFromPath.hasBriefPath && requestedBriefId) {
-    const matching = briefs.find((brief) => brief.id === requestedBriefId) ?? null;
-    if (!matching) {
-      if (briefs.length > 0) {
-        return redirect(`/projects/${projectId}/creation/runs/${runId}/briefs/${briefs[0].id}`, {
-          headers: await api.commit(),
-        });
-      }
-
-      return redirect(`/projects/${projectId}/creation/runs/${runId}`, {
-        headers: await api.commit(),
-      });
-    }
-  }
-
-  let selectedBrief: ContentBriefDetailResponse | null = null;
-  let selectedBriefInstructions: WriterInstructionsResponse | null = null;
-
-  if (requestedBriefId) {
-    const [briefDetailResult, briefInstructionsResult] = await Promise.all([
-      fetchJson<ContentBriefDetailResponse>(api, `/content/${projectId}/briefs/${requestedBriefId}`),
-      fetchJson<WriterInstructionsResponse | null>(api, `/content/${projectId}/briefs/${requestedBriefId}/instructions`),
-    ]);
-
-    if (briefDetailResult.unauthorized || briefInstructionsResult.unauthorized) {
-      return handleUnauthorized(api);
-    }
-
-    if (!briefDetailResult.ok || !briefDetailResult.data) {
-      if (briefs.length > 0) {
-        return redirect(`/projects/${projectId}/creation/runs/${runId}/briefs/${briefs[0].id}`, {
-          headers: await api.commit(),
-        });
-      }
-
-      return redirect(`/projects/${projectId}/creation/runs/${runId}`, {
-        headers: await api.commit(),
-      });
-    }
-
-    selectedBrief = briefDetailResult.data;
-    if (briefInstructionsResult.ok) {
-      selectedBriefInstructions = briefInstructionsResult.data;
-    }
-  }
+  const articles = articlesResult.ok && articlesResult.data ? articlesResult.data.items ?? [] : [];
 
   return data(
     {
       project: projectResult.data,
-      runs: classified.runs,
+      runs,
       selectedRun,
       progress,
       briefs,
-      selectedBriefId: requestedBriefId,
-      selectedBrief,
-      selectedBriefInstructions,
+      articles,
       rankedTopics: rankedTopicsResult.ok && rankedTopicsResult.data ? rankedTopicsResult.data : [],
     } satisfies LoaderData,
     {
       headers: await api.commit(),
-    }
+    },
   );
 }
 
@@ -266,7 +190,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "startCreation") {
     const payload: PipelineStartRequest = {
-      mode: "content_production",
+      mode: "content",
       start_step: 0,
       content: {
         max_briefs: 20,
@@ -274,6 +198,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         min_lead_days: 7,
         use_llm_timing_hints: true,
         llm_timing_flex_days: 14,
+        include_zero_data_topics: true,
+        zero_data_topic_share: 0.2,
+        zero_data_fit_score_min: 0.65,
       },
     };
 
@@ -285,9 +212,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (startResponse.status === 401) return handleUnauthorized(api);
 
     if (!startResponse.ok) {
+      const apiMessage = await readApiErrorMessage(startResponse);
       return data(
-        { error: "Unable to start creation run." } satisfies ActionData,
-        { status: startResponse.status, headers: await api.commit() }
+        {
+          error:
+            apiMessage ??
+            (startResponse.status === 409
+              ? "Content creation is already running for this project."
+              : "Unable to start creation run."),
+        } satisfies ActionData,
+        { status: startResponse.status, headers: await api.commit() },
       );
     }
 
@@ -298,16 +232,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "pausePipeline") {
-    const response = await api.fetch(`/pipeline/${projectId}/pause`, {
+    const runId = String(formData.get("run_id") ?? params.runId ?? "").trim();
+    if (!runId) {
+      return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
+    }
+
+    const response = await api.fetch(`/pipeline/${projectId}/runs/${runId}/pause`, {
       method: "POST",
     });
 
     if (response.status === 401) return handleUnauthorized(api);
 
     if (!response.ok) {
+      const apiMessage = await readApiErrorMessage(response);
       return data(
-        { error: "Unable to pause pipeline." } satisfies ActionData,
-        { status: response.status, headers: await api.commit() }
+        { error: apiMessage ?? "Unable to pause selected run." } satisfies ActionData,
+        { status: response.status, headers: await api.commit() },
       );
     }
 
@@ -316,6 +256,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     });
   }
 
+  // resumePipeline
   const runId = String(formData.get("run_id") ?? params.runId ?? "").trim();
   if (!runId) {
     return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
@@ -328,9 +269,16 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (resumeResponse.status === 401) return handleUnauthorized(api);
 
   if (!resumeResponse.ok) {
+    const apiMessage = await readApiErrorMessage(resumeResponse);
     return data(
-      { error: "Unable to resume pipeline." } satisfies ActionData,
-      { status: resumeResponse.status, headers: await api.commit() }
+      {
+        error:
+          apiMessage ??
+          (resumeResponse.status === 409
+            ? "Content creation is already running for this project."
+            : "Unable to resume pipeline."),
+      } satisfies ActionData,
+      { status: resumeResponse.status, headers: await api.commit() },
     );
   }
 
@@ -339,6 +287,186 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Step timeline components
+// ---------------------------------------------------------------------------
+
+function StepTimelineItem({
+  execution,
+  isFirstItem,
+  isLastItem,
+  animationIndex,
+}: {
+  execution: StepExecutionResponse;
+  isFirstItem: boolean;
+  isLastItem: boolean;
+  animationIndex: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, delay: animationIndex * 0.03 }}
+      className="grid grid-cols-[20px_minmax(0,1fr)] gap-3 md:grid-cols-[170px_24px_minmax(0,1fr)] md:gap-4"
+    >
+      <div className="hidden pt-1 text-right md:block">
+        <p className="text-[11px] font-semibold text-slate-700">{formatTimelineTimestamp(execution.started_at)}</p>
+        <p className="text-[10px] uppercase tracking-wide text-slate-400">Started</p>
+      </div>
+
+      <div className="relative col-start-1 row-span-1 flex justify-center md:col-start-2">
+        {!isFirstItem ? <span className="absolute -top-4 bottom-1/2 w-px bg-slate-200" /> : null}
+        {!isLastItem ? <span className="absolute top-3 -bottom-4 w-px bg-slate-200" /> : null}
+        <span
+          className={cn(
+            "relative mt-2 inline-flex h-2.5 w-2.5 rounded-full border-2 border-white shadow-[0_0_0_2px_rgba(148,163,184,0.18)]",
+            getTimelineDotClass(execution.status),
+          )}
+        />
+      </div>
+
+      <div
+        className={cn(
+          "col-start-2 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_12px_30px_-16px_rgba(15,23,42,0.45)] md:col-start-3",
+        )}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Step {execution.step_number}</p>
+            <p className="truncate font-semibold text-slate-900">{formatStepName(execution.step_name)}</p>
+            <p className="mt-0.5 truncate text-[11px] text-slate-500 md:hidden">
+              Started {formatDateTime(execution.started_at)}
+            </p>
+          </div>
+          <span
+            className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClass(execution.status)}`}
+          >
+            {formatStatusLabel(execution.status)}
+          </span>
+        </div>
+        {execution.progress_percent > 0 && execution.progress_percent < 100 ? (
+          <div className="mt-2">
+            <Progress value={execution.progress_percent} />
+          </div>
+        ) : null}
+        {execution.error_message ? (
+          <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">
+            {execution.error_message}
+          </p>
+        ) : null}
+      </div>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Topic group components
+// ---------------------------------------------------------------------------
+
+function BriefRow({
+  brief,
+  article,
+  runIsActive,
+  runId,
+  projectId,
+}: {
+  brief: ContentBriefResponse;
+  article: ContentArticleResponse | null;
+  runIsActive: boolean;
+  runId: string;
+  projectId: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-slate-300">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-slate-900">{brief.primary_keyword}</p>
+          <p className="text-xs text-slate-500">
+            {brief.page_type ?? "Unknown type"} · {brief.funnel_stage ?? "Unknown stage"}
+          </p>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {article ? (
+            <Badge variant="success">Article ready</Badge>
+          ) : runIsActive ? (
+            <Badge variant="warning">Generating...</Badge>
+          ) : (
+            <Badge variant="muted">No article</Badge>
+          )}
+          <Link to={`/projects/${projectId}/creation/runs/${runId}/briefs/${brief.id}`}>
+            <Button variant="outline" size="sm">
+              View
+            </Button>
+          </Link>
+        </div>
+      </div>
+      {article ? (
+        <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          <p className="font-medium text-slate-800">{article.title}</p>
+          <p className="text-xs text-slate-400">/{article.slug} · v{article.current_version}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TopicGroupCard({
+  group,
+  runIsActive,
+  runId,
+  projectId,
+  animationIndex,
+}: {
+  group: TopicGroup;
+  runIsActive: boolean;
+  runId: string;
+  projectId: string;
+  animationIndex: number;
+}) {
+  const articleCount = group.briefs.filter((b) => b.article !== null).length;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, delay: animationIndex * 0.05 }}
+    >
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+              <Layers className="h-5 w-5" />
+            </div>
+            <div>
+              <CardTitle className="text-base">{group.topic?.name ?? "Ungrouped briefs"}</CardTitle>
+              <CardDescription>
+                {group.briefs.length} {group.briefs.length === 1 ? "brief" : "briefs"} · {articleCount}{" "}
+                {articleCount === 1 ? "article" : "articles"}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {group.briefs.map(({ brief, article }) => (
+            <BriefRow
+              key={brief.id}
+              brief={brief}
+              article={article}
+              runIsActive={runIsActive}
+              runId={runId}
+              projectId={projectId}
+            />
+          ))}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export default function ProjectCreationRunRoute() {
   const {
     project,
@@ -346,9 +474,7 @@ export default function ProjectCreationRunRoute() {
     selectedRun,
     progress,
     briefs,
-    selectedBrief,
-    selectedBriefId,
-    selectedBriefInstructions,
+    articles,
     rankedTopics,
   } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
@@ -357,7 +483,6 @@ export default function ProjectCreationRunRoute() {
 
   const progressFetcher = useFetcher<PipelineProgressResponse>();
   const isProgressRequestInFlightRef = useRef(false);
-  const [activeView, setActiveView] = useState<"briefs" | "readiness" | "runs">("briefs");
 
   const liveProgress = progressFetcher.data ?? progress;
   const effectiveStatus = liveProgress?.status ?? selectedRun.status;
@@ -386,38 +511,104 @@ export default function ProjectCreationRunRoute() {
     };
   }, [project.id, selectedRun.id, effectiveStatus]);
 
-  const stepSummary = summarizeSteps(stepExecutions);
   const overallProgress = Math.round(liveProgress?.overall_progress ?? calculateOverallProgress(stepExecutions));
 
   const sortedStepExecutions = useMemo(
     () => stepExecutions.slice().sort((a, b) => a.step_number - b.step_number),
-    [stepExecutions]
+    [stepExecutions],
   );
+
+  // Build topic → brief → article mapping
+  const topicGroups = useMemo<TopicGroup[]>(() => {
+    const articleByBriefId = new Map<string, ContentArticleResponse>();
+    for (const article of articles) {
+      articleByBriefId.set(article.brief_id, article);
+    }
+
+    const topicMap = new Map<string, TopicResponse>();
+    for (const topic of rankedTopics) {
+      topicMap.set(topic.id, topic);
+    }
+
+    const groupMap = new Map<string, TopicGroup>();
+
+    for (const brief of briefs) {
+      const topicId = brief.topic_id ?? "__ungrouped__";
+      if (!groupMap.has(topicId)) {
+        groupMap.set(topicId, {
+          topic: topicMap.get(topicId) ?? null,
+          topicId,
+          briefs: [],
+        });
+      }
+      groupMap.get(topicId)!.briefs.push({
+        brief,
+        article: articleByBriefId.get(brief.id) ?? null,
+      });
+    }
+
+    // Sort: named topics first (alphabetically), ungrouped last
+    return Array.from(groupMap.values()).sort((a, b) => {
+      if (!a.topic && b.topic) return 1;
+      if (a.topic && !b.topic) return -1;
+      const nameA = a.topic?.name ?? "";
+      const nameB = b.topic?.name ?? "";
+      return nameA.localeCompare(nameB);
+    });
+  }, [briefs, articles, rankedTopics]);
 
   function buildCreationRunUrl(runId: string) {
     return `/projects/${project.id}/creation/runs/${runId}`;
   }
 
-  function buildCreationBriefUrl(runId: string, briefId: string) {
-    return `/projects/${project.id}/creation/runs/${runId}/briefs/${briefId}`;
-  }
+  const runIsActive = isRunActive(effectiveStatus);
 
   return (
     <div className="space-y-6">
-      <section className="sticky top-[5.2rem] z-10 rounded-3xl border border-slate-200 bg-white/95 p-5 shadow-[0_16px_35px_-26px_rgba(15,23,42,0.65)] backdrop-blur-md">
+      {/* Gradient header */}
+      <section className="rounded-3xl border border-slate-200 bg-gradient-to-r from-white via-[#f4f5fb] to-[#eef4ff] p-6 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.55)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4b5e9f]">Content creation</p>
-            <h1 className="font-display text-3xl font-bold text-slate-900">{project.name}</h1>
-            <p className="text-sm text-slate-500">Linear pipeline for outlines, briefs, and writer instructions.</p>
+          <div className="flex items-center gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4b5e9f]">
+                Run {selectedRun.id.slice(0, 8)}
+              </p>
+              <h1 className="mt-1 font-display text-3xl font-bold text-slate-900">{project.name}</h1>
+            </div>
+            <span
+              className={`inline-flex self-start rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClass(effectiveStatus)}`}
+            >
+              {formatStatusLabel(effectiveStatus)}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <Link to={`/projects/${project.id}/discovery`}>
-              <Button variant="outline">Discovery phase</Button>
-            </Link>
-            <Link to="/projects">
-              <Button variant="outline">Back to projects</Button>
+            <Form method="post">
+              <input type="hidden" name="intent" value="startCreation" />
+              <Button type="submit" disabled={runIsActive}>
+                Start new run
+              </Button>
+            </Form>
+            <Form method="post">
+              <input type="hidden" name="intent" value="pausePipeline" />
+              <input type="hidden" name="run_id" value={selectedRun.id} />
+              <Button type="submit" variant="outline" disabled={!runIsActive}>
+                Pause
+              </Button>
+            </Form>
+            <Form method="post">
+              <input type="hidden" name="intent" value="resumePipeline" />
+              <input type="hidden" name="run_id" value={selectedRun.id} />
+              <Button
+                type="submit"
+                variant="outline"
+                disabled={!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)}
+              >
+                Resume
+              </Button>
+            </Form>
+            <Link to={`/projects/${project.id}/creation`}>
+              <Button variant="outline">Back to overview</Button>
             </Link>
             <Button variant="secondary" onClick={() => revalidator.revalidate()}>
               Refresh
@@ -425,320 +616,137 @@ export default function ProjectCreationRunRoute() {
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
-          <Card className="border-slate-200 bg-slate-50/80">
-            <CardContent className="space-y-3 pt-5">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Run health</p>
-                  <p className="font-semibold text-slate-900">Run {selectedRun.id.slice(0, 8)}</p>
-                </div>
-                <span
-                  className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClass(effectiveStatus)}`}
-                >
-                  {formatStatusLabel(effectiveStatus)}
-                </span>
-              </div>
-              <Progress value={overallProgress} />
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                <p>Current step: {formatStepName(liveProgress?.current_step_name ?? "Not started")}</p>
-                <p>Run started: {formatDateTime(selectedRun.started_at ?? selectedRun.created_at)}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200">
-            <CardContent className="pt-5">
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-lg bg-emerald-100 px-2 py-2 text-emerald-900">
-                  <p className="font-semibold">Succeeded</p>
-                  <p>{stepSummary.succeeded}</p>
-                </div>
-                <div className="rounded-lg bg-amber-100 px-2 py-2 text-amber-900">
-                  <p className="font-semibold">Active</p>
-                  <p>{stepSummary.active}</p>
-                </div>
-                <div className="rounded-lg bg-rose-100 px-2 py-2 text-rose-900">
-                  <p className="font-semibold">Failed</p>
-                  <p>{stepSummary.failed}</p>
-                </div>
-                <div className="rounded-lg bg-slate-200 px-2 py-2 text-slate-800">
-                  <p className="font-semibold">Other</p>
-                  <p>{stepSummary.other}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        <div className="mt-4 space-y-1">
+          <Progress value={overallProgress} />
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+            <p>
+              {overallProgress}% · {formatStepName(liveProgress?.current_step_name ?? "Not started")}
+            </p>
+            <p>Started {formatDateTime(selectedRun.started_at ?? selectedRun.created_at)}</p>
+          </div>
         </div>
 
-        {actionData?.error ? (
-          <p className="mt-3 rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-            {actionData.error}
-          </p>
+        {/* Run selector */}
+        {runs.length > 1 ? (
+          <div className="mt-4 border-t border-slate-200 pt-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <span>Switch run:</span>
+              <Select
+                value={selectedRun.id}
+                onChange={(event) => {
+                  const runValue = event.target.value;
+                  if (!runValue) return;
+                  navigate(buildCreationRunUrl(runValue));
+                }}
+                className="h-9 min-w-[260px]"
+              >
+                {runs.map((run) => (
+                  <option key={run.id} value={run.id}>
+                    {run.id.slice(0, 8)} · {run.source_topic_id ? `Topic ${run.source_topic_id}` : "Content run"} ·{" "}
+                    {formatStatusLabel(run.status)}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </div>
         ) : null}
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Form method="post">
-            <input type="hidden" name="intent" value="startCreation" />
-            <Button type="submit" disabled={isRunActive(effectiveStatus)}>
-              Start new creation run
-            </Button>
-          </Form>
-
-          <Form method="post">
-            <input type="hidden" name="intent" value="pausePipeline" />
-            <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
-              Pause
-            </Button>
-          </Form>
-
-          <Form method="post">
-            <input type="hidden" name="intent" value="resumePipeline" />
-            <input type="hidden" name="run_id" value={selectedRun.id} />
-            <Button type="submit" disabled={!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)}>
-              Resume
-            </Button>
-          </Form>
-
-          {selectedBriefId ? (
-            <Link to={buildCreationRunUrl(selectedRun.id)}>
-              <Button variant="outline">Clear brief focus</Button>
-            </Link>
-          ) : null}
-
-          <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
-            <span>Run:</span>
-            <Select
-              value={selectedRun.id}
-              onChange={(event) => {
-                const runValue = event.target.value;
-                if (!runValue) return;
-                navigate(buildCreationRunUrl(runValue));
-              }}
-              className="h-9 min-w-[260px]"
-            >
-              {runs.map((entry) => (
-                <option key={entry.run.id} value={entry.run.id}>
-                  {entry.run.id.slice(0, 8)} · {toPhaseLabel(entry.phase)} · {formatStatusLabel(entry.run.status)}
-                </option>
-              ))}
-            </Select>
-          </label>
-        </div>
       </section>
 
-      <section className="space-y-4">
+      {actionData?.error ? (
+        <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+          {actionData.error}
+        </p>
+      ) : null}
+
+      {/* Step timeline */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Step timeline</CardTitle>
+          <CardDescription>Content production pipeline progress.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {sortedStepExecutions.length === 0 ? (
+            <p className="text-sm text-slate-500">No step executions recorded yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {sortedStepExecutions.map((step, index) => (
+                <StepTimelineItem
+                  key={step.id}
+                  execution={step}
+                  isFirstItem={index === 0}
+                  isLastItem={index === sortedStepExecutions.length - 1}
+                  animationIndex={index}
+                />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Topic-grouped content */}
+      {briefs.length > 0 ? (
+        <section className="space-y-4">
+          <div>
+            <h2 className="font-display text-xl font-bold text-slate-900">Topics &amp; Articles</h2>
+            <p className="text-sm text-slate-500">
+              {briefs.length} {briefs.length === 1 ? "brief" : "briefs"} across {topicGroups.length}{" "}
+              {topicGroups.length === 1 ? "topic" : "topics"}
+            </p>
+          </div>
+          {topicGroups.map((group, index) => (
+            <TopicGroupCard
+              key={group.topicId}
+              group={group}
+              runIsActive={runIsActive}
+              runId={selectedRun.id}
+              projectId={project.id}
+              animationIndex={index}
+            />
+          ))}
+        </section>
+      ) : (
         <Card>
-          <CardHeader>
-            <CardTitle>Linear step timeline</CardTitle>
-            <CardDescription>Content production follows a straight pipeline from discovery outputs to briefs.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {sortedStepExecutions.length === 0 ? (
-              <p className="text-sm text-slate-500">No step executions recorded yet.</p>
-            ) : (
-              sortedStepExecutions.map((step) => (
-                <div key={step.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">Step {step.step_number}</p>
-                      <p className="font-semibold text-slate-900">{formatStepName(step.step_name)}</p>
-                    </div>
-                    <span
-                      className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusBadgeClass(step.status)}`}
-                    >
-                      {formatStatusLabel(step.status)}
-                    </span>
-                  </div>
-                  <div className="mt-2">
-                    <Progress value={step.progress_percent} />
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                    <p>{step.progress_percent}% · {step.progress_message ?? "No message"}</p>
-                    <p>
-                      {formatDateTime(step.started_at)}
-                      {step.completed_at ? ` -> ${formatDateTime(step.completed_at)}` : ""}
-                    </p>
-                  </div>
-                  {step.error_message ? (
-                    <p className="mt-2 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">
-                      {step.error_message}
-                    </p>
-                  ) : null}
-                </div>
-              ))
-            )}
+          <CardContent className="pt-5">
+            <p className="text-sm text-slate-500">
+              {runIsActive
+                ? "Briefs are being generated. They will appear here as the pipeline progresses."
+                : "No briefs have been generated for this project yet."}
+            </p>
           </CardContent>
         </Card>
-      </section>
+      )}
 
-      <Tabs>
-        <TabsList>
-          <TabsTrigger active={activeView === "briefs"} onClick={() => setActiveView("briefs")}>
-            Briefs
-          </TabsTrigger>
-          <TabsTrigger active={activeView === "readiness"} onClick={() => setActiveView("readiness")}>
-            Readiness
-          </TabsTrigger>
-          <TabsTrigger active={activeView === "runs"} onClick={() => setActiveView("runs")}>
-            Runs
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent>
-          {activeView === "briefs" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Content briefs</CardTitle>
-                <CardDescription>Choose a brief to inspect generated details and writer instructions.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {briefs.length === 0 ? (
-                  <p className="text-sm text-slate-500">No briefs generated for this project yet.</p>
-                ) : (
-                  <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
-                    <div className="space-y-2">
-                      {briefs.map((brief) => (
-                        <Link
-                          key={brief.id}
-                          to={buildCreationBriefUrl(selectedRun.id, brief.id)}
-                          className={cn(
-                            "block rounded-xl border px-3 py-2 text-sm",
-                            selectedBriefId === brief.id
-                              ? "border-[#4b5e9f] bg-[#4b5e9f]/10"
-                              : "border-slate-200 bg-white hover:border-slate-300"
-                          )}
-                        >
-                          <p className="font-semibold text-slate-900">{brief.primary_keyword}</p>
-                          <p className="text-xs text-slate-500">
-                            {brief.status} · {brief.page_type ?? "unknown page type"}
-                          </p>
-                        </Link>
-                      ))}
-                    </div>
-
-                    <div className="space-y-3">
-                      {selectedBrief ? (
-                        <>
-                          <div className="rounded-xl border border-slate-200 bg-white p-3">
-                            <p className="font-semibold text-slate-900">Brief quality</p>
-                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-600">
-                              <div className="rounded-lg bg-slate-100 px-2 py-2">
-                                <p className="font-semibold text-slate-900">Outline sections</p>
-                                <p>{selectedBrief.outline?.length ?? 0}</p>
-                              </div>
-                              <div className="rounded-lg bg-slate-100 px-2 py-2">
-                                <p className="font-semibold text-slate-900">Supporting kws</p>
-                                <p>{selectedBrief.supporting_keywords?.length ?? 0}</p>
-                              </div>
-                              <div className="rounded-lg bg-slate-100 px-2 py-2">
-                                <p className="font-semibold text-slate-900">FAQs</p>
-                                <p>{selectedBrief.faq_questions?.length ?? 0}</p>
-                              </div>
-                              <div className="rounded-lg bg-slate-100 px-2 py-2">
-                                <p className="font-semibold text-slate-900">Schema type</p>
-                                <p>{selectedBrief.recommended_schema_type ?? "-"}</p>
-                              </div>
-                            </div>
-                          </div>
-
-                          {selectedBriefInstructions ? (
-                            <div className="rounded-xl border border-slate-200 bg-white p-3 text-sm">
-                              <p className="font-semibold text-slate-900">Writer instructions</p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                Compliance notes, formatting requirements, and QA thresholds.
-                              </p>
-
-                              <div className="mt-3 space-y-2 text-xs">
-                                <div className="rounded-lg bg-slate-100 p-2">
-                                  <p className="font-semibold text-slate-900">Compliance notes</p>
-                                  <p>{selectedBriefInstructions.compliance_notes?.join(", ") || "No compliance notes."}</p>
-                                </div>
-                                <div className="rounded-lg bg-slate-100 p-2">
-                                  <p className="font-semibold text-slate-900">Forbidden claims</p>
-                                  <p>
-                                    {selectedBriefInstructions.forbidden_claims?.join(", ") || "No explicit restrictions."}
-                                  </p>
-                                </div>
-                                <div className="rounded-lg bg-slate-100 p-2">
-                                  <p className="font-semibold text-slate-900">Schema guidance</p>
-                                  <p>{selectedBriefInstructions.schema_guidance ?? "No schema guidance."}</p>
-                                </div>
-                              </div>
-                            </div>
-                          ) : null}
-                        </>
-                      ) : (
-                        <p className="text-sm text-slate-500">Select a brief to inspect details.</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {activeView === "readiness" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Creation readiness context</CardTitle>
-                <CardDescription>Top ranked topics available as upstream input for brief generation.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {rankedTopics.length === 0 ? (
-                  <p className="text-sm text-slate-500">No ranked topics available yet.</p>
-                ) : (
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {rankedTopics.slice(0, 9).map((topic) => (
-                      <div key={topic.id} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                        <p className="font-semibold text-slate-900">{topic.name}</p>
-                        <p className="text-xs text-slate-500">Keywords: {topic.keyword_count}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
-
-          {activeView === "runs" ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Run classification snapshot</CardTitle>
-                <CardDescription>Heuristic run splitting for phase-specific navigation.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {runs.map((entry) => (
-                  <Link
-                    key={entry.run.id}
-                    to={buildCreationRunUrl(entry.run.id)}
-                    className={cn(
-                      "flex items-center justify-between rounded-xl border px-3 py-2 text-sm",
-                      entry.run.id === selectedRun.id ? "border-[#4b5e9f] bg-[#4b5e9f]/10" : "border-slate-200 bg-white"
-                    )}
+      {/* Other runs */}
+      {runs.length > 1 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Other runs</CardTitle>
+            <CardDescription>Content-module runs for this project.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {runs
+              .filter((run) => run.id !== selectedRun.id)
+              .slice(0, 6)
+              .map((run) => (
+                <Link
+                  key={run.id}
+                  to={buildCreationRunUrl(run.id)}
+                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:border-slate-300"
+                >
+                  <p className="font-semibold text-slate-900">
+                    {run.id.slice(0, 8)} · {formatDateTime(run.created_at)}
+                    {run.source_topic_id ? ` · Topic ${run.source_topic_id}` : ""}
+                  </p>
+                  <span
+                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(run.status)}`}
                   >
-                    <p className="font-semibold text-slate-900">
-                      {entry.run.id.slice(0, 8)} · {formatDateTime(entry.run.created_at)}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${toPhaseBadgeClass(entry.phase)}`}
-                      >
-                        {toPhaseLabel(entry.phase)}
-                      </span>
-                      <span
-                        className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(entry.run.status)}`}
-                      >
-                        {formatStatusLabel(entry.run.status)}
-                      </span>
-                    </div>
-                  </Link>
-                ))}
-              </CardContent>
-            </Card>
-          ) : null}
-        </TabsContent>
-      </Tabs>
+                    {formatStatusLabel(run.status)}
+                  </span>
+                </Link>
+              ))}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

@@ -1,26 +1,46 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Form, Link, data, redirect, useActionData, useNavigation } from "react-router";
+import { Form, Link, data, redirect, useActionData, useFetcher, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/_dashboard.projects.new";
-import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Progress } from "~/components/ui/progress";
 import { Select } from "~/components/ui/select";
+import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
   buildPresetConstraints,
   buildPresetGoals,
-  parseMultilineList,
+  formatStatusLabel,
+  getStatusBadgeClass,
+  isValidDomain,
+  sanitizeDomainInput,
   suggestProjectNameFromDomain,
 } from "~/lib/dashboard";
 import type { components } from "~/types/api.generated";
 import type { SetupPreset } from "~/types/dashboard";
 
-type ProjectCreate = components["schemas"]["ProjectCreate"];
 type ProjectResponse = components["schemas"]["ProjectResponse"];
-type PipelineRunStrategy = components["schemas"]["PipelineRunStrategy"];
+type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 type PipelineStartRequest = components["schemas"]["PipelineStartRequest"];
 type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
+type ProjectOnboardingBootstrapRequest = components["schemas"]["ProjectOnboardingBootstrapRequest"];
+type ProjectOnboardingBootstrapResponse = components["schemas"]["ProjectOnboardingBootstrapResponse"];
+type TaskStatusResponse = components["schemas"]["TaskStatusResponse"];
+type BrandVisualContextResponse = components["schemas"]["BrandVisualContextResponse"];
+
+type LoaderData = {
+  step: 1 | 2 | 3;
+  projectId: string | null;
+  setupRunId: string | null;
+  setupTaskId: string | null;
+  project: ProjectResponse | null;
+  prefill: {
+    domain: string;
+    name: string;
+    description: string;
+  };
+};
 
 type ActionData = {
   error?: string;
@@ -28,6 +48,16 @@ type ActionData = {
     domain?: string;
     name?: string;
   };
+};
+
+type TaskStatusLoaderData = {
+  task: TaskStatusResponse | null;
+  error?: string;
+};
+
+type BrandVisualContextLoaderData = {
+  brand: BrandVisualContextResponse | null;
+  error?: string;
 };
 
 const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: string }> = [
@@ -48,43 +78,14 @@ const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: st
   },
 ];
 
-const INTENT_FOCUS_OPTIONS: Array<{ value: string; title: string; description: string }> = [
-  {
-    value: "traffic_growth",
-    title: "Traffic growth",
-    description: "Expand educational and awareness-led demand.",
-  },
-  {
-    value: "lead_generation",
-    title: "Lead generation",
-    description: "Prioritize solution-aware and conversion-ready demand.",
-  },
-  {
-    value: "revenue_content",
-    title: "Revenue content",
-    description: "Emphasize high-intent pages tied to buying decisions.",
-  },
-  {
-    value: "transactional",
-    title: "Transactional",
-    description: "Target queries with clear action intent.",
-  },
-  {
-    value: "commercial",
-    title: "Commercial",
-    description: "Capture evaluation-stage comparison demand.",
-  },
-  {
-    value: "pricing",
-    title: "Pricing",
-    description: "Focus on budget and plan-sensitive searches.",
-  },
-  {
-    value: "purchase",
-    title: "Purchase",
-    description: "Bias toward decision and checkout-stage intent.",
-  },
-];
+const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "error", "paused", "cancelled"]);
+const FAILURE_LIKE_TASK_STATUSES = new Set(["failed", "error", "paused", "cancelled"]);
+
+function parseStep(value: string | null): 1 | 2 | 3 {
+  if (value === "2") return 2;
+  if (value === "3") return 3;
+  return 1;
+}
 
 function parseSetupPreset(value: string): SetupPreset {
   if (value === "lead_generation" || value === "lead_gen") return "lead_generation";
@@ -92,224 +93,604 @@ function parseSetupPreset(value: string): SetupPreset {
   return "traffic_growth";
 }
 
-function parseOptionalInteger(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed;
+function stringifyUnknownValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value.map((entry) => stringifyUnknownValue(entry)).filter(Boolean) as string[];
+    return parts.length > 0 ? parts.join(", ") : null;
+  }
+
+  if (!value || typeof value !== "object") return null;
+
+  const record = value as Record<string, unknown>;
+  const summaryKeys = ["name", "title", "description", "summary", "segment", "persona"];
+  for (const key of summaryKeys) {
+    const match = Object.entries(record).find(([candidate]) => candidate.toLowerCase() === key)?.[1];
+    const normalized = stringifyUnknownValue(match);
+    if (normalized) return normalized;
+  }
+
+  return null;
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") ?? "");
+function normalizeContextKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
 
-  if (intent !== "createProject" && intent !== "createAndStart") {
-    return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
+function tryParseJsonLikeString(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return value;
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function collectMatchingContextEntries(
+  value: unknown,
+  normalizedTargetKeys: Set<string>,
+  visited: WeakSet<object>,
+  matches: unknown[]
+) {
+  const parsedValue = tryParseJsonLikeString(value);
+
+  if (Array.isArray(parsedValue)) {
+    for (const item of parsedValue) {
+      collectMatchingContextEntries(item, normalizedTargetKeys, visited, matches);
+    }
+    return;
   }
 
-  const domain = String(formData.get("domain") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
-  const description = String(formData.get("description") ?? "").trim();
-  const primaryLocale = String(formData.get("primary_locale") ?? "en-US").trim() || "en-US";
-  const preset = parseSetupPreset(String(formData.get("preset") ?? "traffic_growth"));
-  const expertMode = String(formData.get("expert_mode") ?? "false") === "true";
+  if (!parsedValue || typeof parsedValue !== "object") return;
+  if (visited.has(parsedValue)) return;
+  visited.add(parsedValue);
 
-  if (!domain || !name) {
-    return data(
-      {
-        error: "Project name and domain are required.",
-        fieldErrors: {
-          domain: !domain ? "Domain is required" : undefined,
-          name: !name ? "Project name is required" : undefined,
-        },
-      } satisfies ActionData,
-      { status: 400 }
-    );
+  const record = parsedValue as Record<string, unknown>;
+  for (const [candidateKey, candidateValue] of Object.entries(record)) {
+    if (normalizedTargetKeys.has(normalizeContextKey(candidateKey))) {
+      matches.push(candidateValue);
+    }
+
+    collectMatchingContextEntries(candidateValue, normalizedTargetKeys, visited, matches);
+  }
+}
+
+function getBrandContextEntries(brand: BrandVisualContextResponse | null, keys: string[]) {
+  if (!brand) return [];
+
+  const normalizedTargetKeys = new Set(keys.map((key) => normalizeContextKey(key)));
+  const sources = [brand as unknown, brand.visual_style_guide, brand.visual_prompt_contract] as Array<unknown>;
+  const visited = new WeakSet<object>();
+  const matches: unknown[] = [];
+
+  for (const source of sources) {
+    collectMatchingContextEntries(source, normalizedTargetKeys, visited, matches);
   }
 
-  const projectPayload: ProjectCreate = {
-    name,
-    domain,
-    description: description || null,
-    primary_language: "en",
-    primary_locale: primaryLocale,
-    goals: buildPresetGoals(preset),
-    constraints: buildPresetConstraints(preset),
-  };
+  return matches;
+}
 
-  const api = new ApiClient(request);
-  const createResponse = await api.fetch("/projects/", {
-    method: "POST",
-    json: projectPayload,
+function getBrandContextEntry(brand: BrandVisualContextResponse | null, keys: string[]) {
+  const entries = getBrandContextEntries(brand, keys);
+  return entries[0] ?? null;
+}
+
+function getBrandContextValue(brand: BrandVisualContextResponse | null, keys: string[]) {
+  const entries = getBrandContextEntries(brand, keys);
+  for (const entry of entries) {
+    const normalized = stringifyUnknownValue(entry);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function getStringListFromUnknown(value: unknown): string[] {
+  const parsed = tryParseJsonLikeString(value);
+  if (!parsed) return [];
+
+  if (Array.isArray(parsed)) {
+    return parsed
+      .map((entry) => stringifyUnknownValue(entry))
+      .filter((entry): entry is string => Boolean(entry))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  if (typeof parsed === "object") {
+    return Object.values(parsed as Record<string, unknown>)
+      .map((entry) => stringifyUnknownValue(entry))
+      .filter((entry): entry is string => Boolean(entry))
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+  }
+
+  const singleValue = stringifyUnknownValue(parsed);
+  return singleValue ? [singleValue] : [];
+}
+
+function extractIcpNicheNames(brand: BrandVisualContextResponse | null) {
+  const entries = getBrandContextEntries(brand, ["suggested_icp_niches", "icp_niches", "recommended_icp_niches"]);
+  if (entries.length === 0) return [];
+
+  const values = entries.flatMap((entry) => {
+    const parsed = tryParseJsonLikeString(entry);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (!item || typeof item !== "object") return null;
+
+        const record = item as Record<string, unknown>;
+        return (
+          stringifyUnknownValue(record.niche_name) ??
+          stringifyUnknownValue(record.name) ??
+          stringifyUnknownValue(record.title) ??
+          stringifyUnknownValue(record.segment)
+        );
+      })
+      .filter((item): item is string => Boolean(item))
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
   });
 
-  if (createResponse.status === 401) {
-    return redirect("/login", {
-      headers: {
-        "Set-Cookie": await api.logout(),
-      },
-    });
-  }
+  return Array.from(new Set(values));
+}
 
-  if (!createResponse.ok) {
-    return data(
-      { error: "Unable to create project." } satisfies ActionData,
-      { status: createResponse.status, headers: await api.commit() }
-    );
-  }
+function extractDifferentiators(brand: BrandVisualContextResponse | null) {
+  const keys = [
+    "suggested_differentiators",
+    "differentiators",
+    "key_differentiators",
+    "product_differentiators",
+    "competitive_differentiators",
+    "unique_value_propositions",
+    "unique_value_props",
+    "usp",
+  ];
 
-  const createdProject = (await createResponse.json()) as ProjectResponse;
+  for (const key of keys) {
+    const entries = getBrandContextEntries(brand, [key]);
+    for (const entry of entries) {
+      if (!entry) continue;
 
-  if (intent === "createProject") {
-    return redirect(`/projects/${createdProject.id}/discovery?created=1`, {
-      headers: await api.commit(),
-    });
-  }
-
-  const conversionIntents = parseMultilineList(String(formData.get("strategy_conversion_intents") ?? ""));
-  const includeTopics = parseMultilineList(String(formData.get("strategy_include_topics") ?? ""));
-  const excludeTopics = parseMultilineList(String(formData.get("strategy_exclude_topics") ?? ""));
-  const icpRoles = parseMultilineList(String(formData.get("strategy_icp_roles") ?? ""));
-  const icpIndustries = parseMultilineList(String(formData.get("strategy_icp_industries") ?? ""));
-  const icpPains = parseMultilineList(String(formData.get("strategy_icp_pains") ?? ""));
-
-  const strategy: PipelineRunStrategy = {
-    scope_mode:
-      String(formData.get("strategy_scope_mode") ?? "balanced_adjacent") === "strict"
-        ? "strict"
-        : String(formData.get("strategy_scope_mode") ?? "balanced_adjacent") === "broad_education"
-          ? "broad_education"
-          : "balanced_adjacent",
-    branded_keyword_mode:
-      String(formData.get("strategy_branded_keyword_mode") ?? "comparisons_only") === "exclude_all"
-        ? "exclude_all"
-        : String(formData.get("strategy_branded_keyword_mode") ?? "comparisons_only") === "allow_all"
-          ? "allow_all"
-          : "comparisons_only",
-    fit_threshold_profile:
-      String(formData.get("strategy_fit_threshold_profile") ?? "aggressive") === "moderate"
-        ? "moderate"
-        : String(formData.get("strategy_fit_threshold_profile") ?? "aggressive") === "lenient"
-          ? "lenient"
-          : "aggressive",
-    market_mode_override: "auto",
-  };
-
-  const minEligibleTarget = parseOptionalInteger(String(formData.get("strategy_min_eligible_target") ?? ""));
-
-  if (expertMode) {
-    if (conversionIntents.length > 0) strategy.conversion_intents = conversionIntents;
-    if (includeTopics.length > 0) strategy.include_topics = includeTopics;
-    if (excludeTopics.length > 0) strategy.exclude_topics = excludeTopics;
-    if (icpRoles.length > 0) strategy.icp_roles = icpRoles;
-    if (icpIndustries.length > 0) strategy.icp_industries = icpIndustries;
-    if (icpPains.length > 0) strategy.icp_pains = icpPains;
-    if (minEligibleTarget !== null && minEligibleTarget >= 1 && minEligibleTarget <= 100) {
-      strategy.min_eligible_target = minEligibleTarget;
+      const values = getStringListFromUnknown(entry);
+      if (values.length > 0) {
+        return Array.from(new Set(values));
+      }
     }
   }
 
-  const startPayload: PipelineStartRequest = {
-    mode: "discovery_loop",
-    start_step: 0,
-    strategy,
-    discovery: {
-      max_iterations: 3,
-      min_eligible_topics: null,
-      require_serp_gate: true,
-      max_keyword_difficulty: 65,
-      min_domain_diversity: 0.5,
-      require_intent_match: true,
-      max_serp_servedness: 0.75,
-      max_serp_competitor_density: 0.7,
-      min_serp_intent_confidence: 0.35,
-      auto_start_content: true,
+  return [];
+}
+
+function ShimmerPlaceholder({ className }: { className: string }) {
+  return (
+    <div className={`relative overflow-hidden rounded-md bg-slate-200/90 ${className}`}>
+      <motion.div
+        className="absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/90 to-transparent"
+        animate={{ x: ["-140%", "360%"] }}
+        transition={{ duration: 1.35, repeat: Infinity, ease: "linear" }}
+      />
+    </div>
+  );
+}
+
+function buildOnboardingUrl({
+  step,
+  projectId,
+  setupRunId,
+  setupTaskId,
+  prefill,
+}: {
+  step: 1 | 2 | 3;
+  projectId?: string | null;
+  setupRunId?: string | null;
+  setupTaskId?: string | null;
+  prefill?: { domain?: string; name?: string; description?: string };
+}) {
+  const search = new URLSearchParams();
+  search.set("step", String(step));
+
+  if (projectId) search.set("projectId", projectId);
+  if (setupRunId) search.set("setupRunId", setupRunId);
+  if (setupTaskId) search.set("setupTaskId", setupTaskId);
+
+  if (prefill?.domain) search.set("domain", prefill.domain);
+  if (prefill?.name) search.set("name", prefill.name);
+  if (prefill?.description) search.set("description", prefill.description);
+
+  return `/projects/new?${search.toString()}`;
+}
+
+async function handleUnauthorized(api: ApiClient) {
+  return redirect("/login", {
+    headers: {
+      "Set-Cookie": await api.logout(),
     },
+  });
+}
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const url = new URL(request.url);
+  const api = new ApiClient(request);
+
+  const step = parseStep(url.searchParams.get("step"));
+  const projectId = String(url.searchParams.get("projectId") ?? "").trim() || null;
+  const setupRunId = String(url.searchParams.get("setupRunId") ?? "").trim() || null;
+  const setupTaskId = String(url.searchParams.get("setupTaskId") ?? "").trim() || null;
+
+  const prefill = {
+    domain: sanitizeDomainInput(String(url.searchParams.get("domain") ?? "")),
+    name: String(url.searchParams.get("name") ?? "").trim(),
+    description: String(url.searchParams.get("description") ?? "").trim(),
   };
 
-  const startResponse = await api.fetch(`/pipeline/${createdProject.id}/start`, {
-    method: "POST",
-    json: startPayload,
-  });
+  if (step > 1 && (!projectId || !setupRunId || !setupTaskId)) {
+    return data(
+      {
+        step: 1,
+        projectId: null,
+        setupRunId: null,
+        setupTaskId: null,
+        project: null,
+        prefill,
+      } satisfies LoaderData,
+      { headers: await api.commit() }
+    );
+  }
 
-  if (!startResponse.ok) {
-    return redirect(`/projects/${createdProject.id}/discovery?created=1&startError=1`, {
+  let project: ProjectResponse | null = null;
+  if (projectId) {
+    const projectResponse = await api.fetch(`/projects/${projectId}`);
+    if (projectResponse.status === 401) return handleUnauthorized(api);
+    if (projectResponse.ok) {
+      project = (await projectResponse.json()) as ProjectResponse;
+    }
+  }
+
+  return data(
+    {
+      step,
+      projectId,
+      setupRunId,
+      setupTaskId,
+      project,
+      prefill,
+    } satisfies LoaderData,
+    {
+      headers: await api.commit(),
+    }
+  );
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const api = new ApiClient(request);
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  if (intent === "bootstrapProject") {
+    const rawDomain = String(formData.get("domain") ?? "");
+    const domain = sanitizeDomainInput(rawDomain);
+    const name = String(formData.get("name") ?? "").trim();
+    const description = String(formData.get("description") ?? "").trim();
+
+    const domainMissing = !domain;
+    const domainInvalid = !domainMissing && !isValidDomain(domain);
+
+    if (domainMissing || domainInvalid || !name) {
+      return data(
+        {
+          error: domainInvalid ? "Please enter a valid domain." : "Project name and domain are required.",
+          fieldErrors: {
+            domain: domainMissing ? "Domain is required." : domainInvalid ? "Enter a valid domain (e.g. example.com)." : undefined,
+            name: !name ? "Project name is required." : undefined,
+          },
+        } satisfies ActionData,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const payload: ProjectOnboardingBootstrapRequest = {
+      name,
+      domain,
+      description: description || null,
+      primary_language: "en",
+      primary_locale: "en-US",
+    };
+
+    const bootstrapResponse = await api.fetch("/projects/onboarding/bootstrap", {
+      method: "POST",
+      json: payload,
+    });
+
+    if (bootstrapResponse.status === 401) return handleUnauthorized(api);
+
+    if (!bootstrapResponse.ok) {
+      const apiMessage = await readApiErrorMessage(bootstrapResponse);
+      return data(
+        { error: apiMessage ?? "Unable to bootstrap project." } satisfies ActionData,
+        { status: bootstrapResponse.status, headers: await api.commit() }
+      );
+    }
+
+    const bootstrap = (await bootstrapResponse.json()) as ProjectOnboardingBootstrapResponse;
+    return redirect(
+      buildOnboardingUrl({
+        step: 2,
+        projectId: bootstrap.project.id,
+        setupRunId: bootstrap.setup_run_id,
+        setupTaskId: bootstrap.setup_task.task_id,
+      }),
+      { headers: await api.commit() }
+    );
+  }
+
+  if (intent === "updateProjectStrategy") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    const setupRunId = String(formData.get("setup_run_id") ?? "").trim();
+    const setupTaskId = String(formData.get("setup_task_id") ?? "").trim();
+    const primaryLocale = String(formData.get("primary_locale") ?? "en-US").trim() || "en-US";
+    const preset = parseSetupPreset(String(formData.get("preset") ?? "traffic_growth"));
+
+    if (!projectId || !setupRunId || !setupTaskId) {
+      return data({ error: "Missing onboarding context." } satisfies ActionData, {
+        status: 400,
+        headers: await api.commit(),
+      });
+    }
+
+    const updatePayload: ProjectUpdate = {
+      primary_locale: primaryLocale,
+      goals: buildPresetGoals(preset),
+      constraints: buildPresetConstraints(preset),
+    };
+
+    const updateResponse = await api.fetch(`/projects/${projectId}`, {
+      method: "PUT",
+      json: updatePayload,
+    });
+
+    if (updateResponse.status === 401) return handleUnauthorized(api);
+
+    if (!updateResponse.ok) {
+      const apiMessage = await readApiErrorMessage(updateResponse);
+      return data(
+        { error: apiMessage ?? "Unable to update project strategy." } satisfies ActionData,
+        { status: updateResponse.status, headers: await api.commit() }
+      );
+    }
+
+    return redirect(
+      buildOnboardingUrl({
+        step: 3,
+        projectId,
+        setupRunId,
+        setupTaskId,
+      }),
+      { headers: await api.commit() }
+    );
+  }
+
+  if (intent === "startDiscovery") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    const setupRunId = String(formData.get("setup_run_id") ?? "").trim();
+    const setupTaskId = String(formData.get("setup_task_id") ?? "").trim();
+
+    if (!projectId || !setupRunId || !setupTaskId) {
+      return data({ error: "Missing onboarding context." } satisfies ActionData, {
+        status: 400,
+        headers: await api.commit(),
+      });
+    }
+
+    const payload: PipelineStartRequest = {
+      mode: "discovery",
+    };
+
+    const startResponse = await api.fetch(`/pipeline/${projectId}/start`, {
+      method: "POST",
+      json: payload,
+    });
+
+    if (startResponse.status === 401) return handleUnauthorized(api);
+
+    if (!startResponse.ok) {
+      const apiMessage = await readApiErrorMessage(startResponse);
+      return data(
+        {
+          error:
+            apiMessage ??
+            (startResponse.status === 409 ? "Discovery is already running for this project." : "Unable to start discovery."),
+        } satisfies ActionData,
+        { status: startResponse.status, headers: await api.commit() }
+      );
+    }
+
+    const run = (await startResponse.json()) as PipelineRunResponse;
+    return redirect(`/projects/${projectId}/discovery/runs/${encodeURIComponent(run.id)}?created=1`, {
       headers: await api.commit(),
     });
   }
 
-  const run = (await startResponse.json()) as PipelineRunResponse;
-  return redirect(`/projects/${createdProject.id}/discovery/runs/${encodeURIComponent(run.id)}?created=1`, {
+  return data({ error: "Unsupported action." } satisfies ActionData, {
+    status: 400,
     headers: await api.commit(),
   });
 }
 
 export default function ProjectSetupRoute() {
+  const { step, project, projectId, setupRunId, setupTaskId, prefill } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const navigation = useNavigation();
 
-  const [step, setStep] = useState(1);
-  const [domain, setDomain] = useState("");
-  const [name, setName] = useState("");
-  const [nameDirty, setNameDirty] = useState(false);
-  const [description, setDescription] = useState("");
-  const [locale, setLocale] = useState("en-US");
+  const taskFetcher = useFetcher<TaskStatusLoaderData>();
+  const brandFetcher = useFetcher<BrandVisualContextLoaderData>();
+
+  const [domain, setDomain] = useState(prefill.domain);
+  const [name, setName] = useState(prefill.name);
+  const [description, setDescription] = useState(prefill.description);
+  const [nameDirty, setNameDirty] = useState(Boolean(prefill.name));
+  const [expandedAsset, setExpandedAsset] = useState<{ url: string; role: string } | null>(null);
+  const [assetImageErrors, setAssetImageErrors] = useState<Record<string, boolean>>({});
+
+  const [locale, setLocale] = useState(project?.primary_locale ?? "en-US");
   const [preset, setPreset] = useState<SetupPreset>("traffic_growth");
-  const [expertMode, setExpertMode] = useState(false);
-
-  const [scopeMode, setScopeMode] = useState("balanced_adjacent");
-  const [brandedMode, setBrandedMode] = useState("comparisons_only");
-  const [fitProfile, setFitProfile] = useState("aggressive");
-  const [minEligibleTarget, setMinEligibleTarget] = useState("");
-  const [conversionIntents, setConversionIntents] = useState<string[]>([]);
-  const [includeTopics, setIncludeTopics] = useState("");
-  const [excludeTopics, setExcludeTopics] = useState("");
-  const [icpRoles, setIcpRoles] = useState("");
-  const [icpIndustries, setIcpIndustries] = useState("");
-  const [icpPains, setIcpPains] = useState("");
-
-  const [stepError, setStepError] = useState<string | null>(null);
 
   const isSubmitting = navigation.state === "submitting";
+  const domainIsValid = isValidDomain(domain);
+  const inlineDomainError = domain.length > 0 && !domainIsValid ? "Enter a valid domain (e.g. example.com)." : null;
+  const domainError = domainIsValid ? null : actionData?.fieldErrors?.domain ?? inlineDomainError;
 
-  const selectedPreset = useMemo(() => PRESET_OPTIONS.find((option) => option.value === preset) ?? PRESET_OPTIONS[0], [preset]);
+  const task = taskFetcher.data?.task ?? null;
+  const taskStatus = String(task?.status ?? "").toLowerCase();
+  const taskCurrentStepName = task?.current_step_name ?? null;
+  const taskProgress = task?.progress_percent ?? 0;
+  const taskError = taskFetcher.data?.error ?? null;
 
-  const stepLabels = ["Site basics", "Goal preset", "Launch"];
+  const isTaskCompleted = taskStatus === "completed";
+  const isTaskFailureLike = FAILURE_LIKE_TASK_STATUSES.has(taskStatus);
+  const taskStatusRef = useRef(taskStatus);
+  const taskFetcherStateRef = useRef(taskFetcher.state);
+  const brandFetcherStateRef = useRef(brandFetcher.state);
+  const brandPollAttemptsRef = useRef(0);
 
-  function handleDomainChange(value: string) {
-    setDomain(value);
+  const brand = brandFetcher.data?.brand ?? null;
+  const brandError = brandFetcher.data?.error ?? null;
+  const companyName = brand?.company_name?.trim() || null;
+  const icp = getBrandContextValue(brand, [
+    "icp",
+    "ideal_customer_profile",
+    "target_audience",
+    "audience",
+    "buyer_persona",
+    "persona",
+  ]);
+  const productType = getBrandContextValue(brand, [
+    "product_type",
+    "offering_type",
+    "product_category",
+    "category",
+    "business_model",
+    "offering",
+  ]);
+  const icpNicheNames = extractIcpNicheNames(brand);
+  const differentiators = extractDifferentiators(brand);
+  const icpSummary = icpNicheNames.length > 0 ? icpNicheNames.slice(0, 2).join(" · ") : icp;
+  const hasBrandContextInsights = Boolean(icpSummary || productType || icpNicheNames.length > 0 || differentiators.length > 0);
 
-    if (!nameDirty) {
-      setName(suggestProjectNameFromDomain(value));
-    }
-  }
+  const retryLink = useMemo(() => {
+    return buildOnboardingUrl({
+      step: 1,
+      prefill: {
+        domain: project?.domain ?? domain,
+        name: project?.name ?? name,
+        description: project?.description ?? description,
+      },
+    });
+  }, [description, domain, name, project?.description, project?.domain, project?.name]);
 
-  function goNext() {
-    if (step === 1) {
-      if (!domain.trim() || !name.trim()) {
-        setStepError("Domain and project name are required.");
+  useEffect(() => {
+    taskStatusRef.current = taskStatus;
+  }, [taskStatus]);
+
+  useEffect(() => {
+    taskFetcherStateRef.current = taskFetcher.state;
+  }, [taskFetcher.state]);
+
+  useEffect(() => {
+    brandFetcherStateRef.current = brandFetcher.state;
+  }, [brandFetcher.state]);
+
+  useEffect(() => {
+    brandPollAttemptsRef.current = 0;
+  }, [projectId, step]);
+
+  useEffect(() => {
+    if (step !== 3 || !setupTaskId) return;
+    let intervalId: number | null = null;
+
+    const poll = () => {
+      if (taskFetcherStateRef.current !== "idle") return;
+
+      if (TERMINAL_TASK_STATUSES.has(taskStatusRef.current)) {
+        if (intervalId !== null) {
+          window.clearInterval(intervalId);
+          intervalId = null;
+        }
         return;
       }
-    }
 
-    setStepError(null);
-    setStep((current) => Math.min(3, current + 1));
-  }
+      taskFetcher.load(`/projects/setup-task/${encodeURIComponent(setupTaskId)}?ts=${Date.now()}`);
+    };
 
-  function goBack() {
-    setStepError(null);
-    setStep((current) => Math.max(1, current - 1));
-  }
-
-  function toggleConversionIntent(value: string) {
-    setConversionIntents((current) => {
-      if (current.includes(value)) {
-        return current.filter((entry) => entry !== value);
+    poll();
+    intervalId = window.setInterval(poll, 2000);
+    return () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
       }
-      return [...current, value];
-    });
+    };
+  }, [setupTaskId, step]);
+
+  useEffect(() => {
+    if (step !== 3 || !projectId || !isTaskCompleted) return;
+    if (brand && hasBrandContextInsights) return;
+    let intervalId: number | null = null;
+
+    const pollBrand = () => {
+      if (brandFetcherStateRef.current !== "idle") return;
+      if (brandPollAttemptsRef.current >= 24) return;
+      brandPollAttemptsRef.current += 1;
+      brandFetcher.load(`/projects/${projectId}/brand-visual-context?ts=${Date.now()}`);
+    };
+
+    pollBrand();
+    intervalId = window.setInterval(pollBrand, 5000);
+    return () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [brand, hasBrandContextInsights, isTaskCompleted, projectId, step]);
+
+  useEffect(() => {
+    if (!expandedAsset) return;
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpandedAsset(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeydown);
+    return () => {
+      window.removeEventListener("keydown", handleKeydown);
+    };
+  }, [expandedAsset]);
+
+  function handleDomainChange(value: string) {
+    const sanitized = sanitizeDomainInput(value);
+    setDomain(sanitized);
+
+    if (!nameDirty) {
+      setName(suggestProjectNameFromDomain(sanitized));
+    }
   }
+
+  const stepLabels = ["Basic project info", "Strategy + SEO inputs", "Setup progress"];
 
   return (
     <div className="space-y-6">
@@ -351,57 +732,47 @@ export default function ProjectSetupRoute() {
         </CardContent>
       </Card>
 
-      <Form method="post" className="space-y-6">
-        <input type="hidden" name="domain" value={domain} />
-        <input type="hidden" name="name" value={name} />
-        <input type="hidden" name="description" value={description} />
-        <input type="hidden" name="primary_locale" value={locale} />
-        <input type="hidden" name="preset" value={preset} />
-        <input type="hidden" name="expert_mode" value={expertMode ? "true" : "false"} />
+      {actionData?.error ? (
+        <Card className="border-rose-300 bg-rose-50">
+          <CardContent className="pt-5 text-sm font-semibold text-rose-700">{actionData.error}</CardContent>
+        </Card>
+      ) : null}
 
-        <input type="hidden" name="strategy_scope_mode" value={scopeMode} />
-        <input type="hidden" name="strategy_branded_keyword_mode" value={brandedMode} />
-        <input type="hidden" name="strategy_fit_threshold_profile" value={fitProfile} />
-        <input type="hidden" name="strategy_min_eligible_target" value={minEligibleTarget} />
-        <input type="hidden" name="strategy_conversion_intents" value={conversionIntents.join(",")} />
-        <input type="hidden" name="strategy_include_topics" value={includeTopics} />
-        <input type="hidden" name="strategy_exclude_topics" value={excludeTopics} />
-        <input type="hidden" name="strategy_icp_roles" value={icpRoles} />
-        <input type="hidden" name="strategy_icp_industries" value={icpIndustries} />
-        <input type="hidden" name="strategy_icp_pains" value={icpPains} />
+      {step === 1 ? (
+        <motion.div key="step1" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <Form method="post" className="space-y-6">
+            <input type="hidden" name="intent" value="bootstrapProject" />
+            <input type="hidden" name="domain" value={domain} />
+            <input type="hidden" name="name" value={name} />
+            <input type="hidden" name="description" value={description} />
 
-        {actionData?.error ? (
-          <Card className="border-rose-300 bg-rose-50">
-            <CardContent className="pt-5 text-sm font-semibold text-rose-700">{actionData.error}</CardContent>
-          </Card>
-        ) : null}
-
-        {stepError ? (
-          <Card className="border-amber-300 bg-amber-50">
-            <CardContent className="pt-5 text-sm font-semibold text-amber-900">{stepError}</CardContent>
-          </Card>
-        ) : null}
-
-        {step === 1 ? (
-          <motion.div key="step1" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
             <Card>
               <CardHeader>
-                <CardTitle>Site basics</CardTitle>
-                <CardDescription>Set the essentials. We auto-suggest a project name from your domain.</CardDescription>
+                <CardTitle>Basic project info</CardTitle>
+                <CardDescription>Create the project immediately and kick off setup step 0 + step 1 in the background.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
-                <label className="grid gap-1.5 text-sm">
+                <label className="grid gap-1.5 text-sm md:col-span-2">
                   <span className="font-semibold text-slate-700">Domain</span>
-                  <input
-                    type="text"
-                    value={domain}
-                    onChange={(event) => handleDomainChange(event.target.value)}
-                    placeholder="example.com"
-                    className="h-11 rounded-xl border border-slate-300 px-3 text-sm"
-                  />
-                  {actionData?.fieldErrors?.domain ? (
-                    <span className="text-xs font-semibold text-rose-600">{actionData.fieldErrors.domain}</span>
-                  ) : null}
+                  <div
+                    className={`flex h-11 items-center rounded-xl border bg-white text-sm ${
+                      domainError ? "border-rose-400" : "border-slate-300"
+                    }`}
+                  >
+                    <span className="select-none pl-3 text-slate-400">https://</span>
+                    <input
+                      type="text"
+                      value={domain}
+                      onChange={(event) => handleDomainChange(event.target.value)}
+                      placeholder="example.com"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      aria-invalid={Boolean(domainError)}
+                      className="h-full min-w-0 flex-1 rounded-r-xl border-0 bg-transparent px-1 pr-3 text-sm outline-none"
+                    />
+                  </div>
+                  {domainError ? <span className="text-xs font-semibold text-rose-600">{domainError}</span> : null}
                 </label>
 
                 <label className="grid gap-1.5 text-sm">
@@ -421,17 +792,7 @@ export default function ProjectSetupRoute() {
                   ) : null}
                 </label>
 
-                <label className="grid gap-1.5 text-sm md:col-span-1">
-                  <span className="font-semibold text-slate-700">Primary locale</span>
-                  <Select value={locale} onChange={(event) => setLocale(event.target.value)}>
-                    <option value="en-US">English (United States)</option>
-                    <option value="en-GB">English (United Kingdom)</option>
-                    <option value="en-CA">English (Canada)</option>
-                    <option value="en-AU">English (Australia)</option>
-                  </Select>
-                </label>
-
-                <label className="grid gap-1.5 text-sm md:col-span-1">
+                <label className="grid gap-1.5 text-sm">
                   <span className="font-semibold text-slate-700">Description (optional)</span>
                   <input
                     type="text"
@@ -443,15 +804,48 @@ export default function ProjectSetupRoute() {
                 </label>
               </CardContent>
             </Card>
-          </motion.div>
-        ) : null}
 
-        {step === 2 ? (
-          <motion.div key="step2" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            <div className="flex justify-end">
+              <Button type="submit" size="lg" disabled={isSubmitting || !domainIsValid}>
+                {isSubmitting ? "Bootstrapping..." : "Create project + start setup"}
+              </Button>
+            </div>
+          </Form>
+        </motion.div>
+      ) : null}
+
+      {step === 2 ? (
+        <motion.div key="step2" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <Form method="post" className="space-y-6">
+            <input type="hidden" name="intent" value="updateProjectStrategy" />
+            <input type="hidden" name="project_id" value={projectId ?? ""} />
+            <input type="hidden" name="setup_run_id" value={setupRunId ?? ""} />
+            <input type="hidden" name="setup_task_id" value={setupTaskId ?? ""} />
+            <input type="hidden" name="preset" value={preset} />
+            <input type="hidden" name="primary_locale" value={locale} />
+
             <Card>
               <CardHeader>
-                <CardTitle>Choose a goal preset</CardTitle>
-                <CardDescription>Keep setup fast with tuned defaults for goals and constraints.</CardDescription>
+                <CardTitle>Strategy + SEO inputs</CardTitle>
+                <CardDescription>Set the primary locale and preset constraints after bootstrap has started.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <label className="grid gap-1.5 text-sm">
+                  <span className="font-semibold text-slate-700">Primary locale</span>
+                  <Select value={locale} onChange={(event) => setLocale(event.target.value)}>
+                    <option value="en-US">English (United States)</option>
+                    <option value="en-GB">English (United Kingdom)</option>
+                    <option value="en-CA">English (Canada)</option>
+                    <option value="en-AU">English (Australia)</option>
+                  </Select>
+                </label>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Preset constraints</CardTitle>
+                <CardDescription>Choose a preset to apply default project constraints.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-3">
                 {PRESET_OPTIONS.map((option) => {
@@ -462,9 +856,7 @@ export default function ProjectSetupRoute() {
                       type="button"
                       onClick={() => setPreset(option.value)}
                       className={`rounded-2xl border p-4 text-left transition-colors ${
-                        active
-                          ? "border-[#2f6f71] bg-[#2f6f71]/10"
-                          : "border-slate-200 bg-white hover:border-slate-300"
+                        active ? "border-[#2f6f71] bg-[#2f6f71]/10" : "border-slate-200 bg-white hover:border-slate-300"
                       }`}
                     >
                       <p className="font-display text-lg font-bold text-slate-900">{option.title}</p>
@@ -475,228 +867,252 @@ export default function ProjectSetupRoute() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  Expert mode
-                  <Badge variant={expertMode ? "info" : "default"}>{expertMode ? "On" : "Off"}</Badge>
-                </CardTitle>
-                <CardDescription>
-                  Enable only if you want to override strategy defaults. Most users should keep this off.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={expertMode}
-                    onChange={(event) => setExpertMode(event.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  Enable expert strategy overrides
-                </label>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Link to={retryLink}>
+                <Button type="button" variant="outline">
+                  Back
+                </Button>
+              </Link>
+              <Button type="submit" size="lg" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Save + continue"}
+              </Button>
+            </div>
+          </Form>
+        </motion.div>
+      ) : null}
 
-                {expertMode ? (
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <label className="grid gap-1.5 text-sm">
-                      <span className="font-semibold text-slate-700">Scope mode</span>
-                      <Select value={scopeMode} onChange={(event) => setScopeMode(event.target.value)}>
-                        <option value="strict">strict</option>
-                        <option value="balanced_adjacent">balanced_adjacent</option>
-                        <option value="broad_education">broad_education</option>
-                      </Select>
-                    </label>
+      {step === 3 ? (
+        <motion.div key="step3" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Brand profile extraction</CardTitle>
+              <CardDescription>
+                We are fetching company name, ICP, product type, and scraped brand assets from your site.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-900">Extraction status</p>
+                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getStatusBadgeClass(task?.status)}`}>
+                    {formatStatusLabel(task?.status ?? "queued")}
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">
+                  {taskCurrentStepName
+                    ? `Current step: ${taskCurrentStepName}`
+                    : isTaskCompleted
+                      ? "Setup complete. Loading brand profile data."
+                      : "Analyzing your domain and extracting brand profile context."}
+                </p>
+                <div className="mt-4">
+                  <Progress value={Math.max(0, Math.min(100, Math.round(taskProgress ?? 0)))} />
+                </div>
+                <p className="mt-2 text-right text-xs font-semibold text-[#1e5052]">
+                  {task?.progress_percent === null || task?.progress_percent === undefined
+                    ? "Working..."
+                    : `${Math.round(taskProgress)}%`}
+                </p>
+                {taskError ? <p className="mt-3 text-sm font-semibold text-rose-700">{taskError}</p> : null}
+                {task?.error_message ? <p className="mt-3 text-sm font-semibold text-rose-700">{task.error_message}</p> : null}
+              </div>
 
-                    <label className="grid gap-1.5 text-sm">
-                      <span className="font-semibold text-slate-700">Branded keyword mode</span>
-                      <Select value={brandedMode} onChange={(event) => setBrandedMode(event.target.value)}>
-                        <option value="comparisons_only">comparisons_only</option>
-                        <option value="exclude_all">exclude_all</option>
-                        <option value="allow_all">allow_all</option>
-                      </Select>
-                    </label>
-
-                    <label className="grid gap-1.5 text-sm">
-                      <span className="font-semibold text-slate-700">Fit threshold profile</span>
-                      <Select value={fitProfile} onChange={(event) => setFitProfile(event.target.value)}>
-                        <option value="aggressive">aggressive</option>
-                        <option value="moderate">moderate</option>
-                        <option value="lenient">lenient</option>
-                      </Select>
-                    </label>
-
-                    <label className="grid gap-1.5 text-sm md:col-span-3">
-                      <span className="font-semibold text-slate-700">Min eligible target (1-100)</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={100}
-                        value={minEligibleTarget}
-                        onChange={(event) => setMinEligibleTarget(event.target.value)}
-                        placeholder="Optional"
-                        className="h-10 rounded-xl border border-slate-300 px-3 text-sm"
-                      />
-                    </label>
-
-                    <div className="grid gap-2 text-sm md:col-span-3">
-                      <span className="font-semibold text-slate-700">Intent focus</span>
-                      <p className="text-xs text-slate-500">
-                        Optional advanced override. Selected intents are sent as strategy.conversion_intents.
-                      </p>
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {INTENT_FOCUS_OPTIONS.map((option) => {
-                          const active = conversionIntents.includes(option.value);
-                          return (
-                            <label
-                              key={option.value}
-                              className={`flex items-start gap-2 rounded-xl border px-3 py-2 ${
-                                active ? "border-[#2f6f71] bg-[#2f6f71]/10" : "border-slate-200 bg-white"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={active}
-                                onChange={() => toggleConversionIntent(option.value)}
-                                className="mt-1 h-4 w-4 rounded border-slate-300"
-                              />
-                              <span className="block">
-                                <span className="block font-semibold text-slate-800">{option.title}</span>
-                                <span className="block text-xs text-slate-500">{option.description}</span>
-                              </span>
-                            </label>
-                          );
-                        })}
-                      </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Company name</p>
+                  {brand ? (
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{companyName ?? "Not detected yet"}</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      <ShimmerPlaceholder className="h-5 w-48" />
+                      <p className="text-xs text-slate-500">Extracting company identity from homepage and metadata.</p>
                     </div>
+                  )}
+                </div>
 
-                    <label className="grid gap-1.5 text-sm md:col-span-2">
-                      <span className="font-semibold text-slate-700">Include topics</span>
-                      <textarea
-                        rows={2}
-                        value={includeTopics}
-                        onChange={(event) => setIncludeTopics(event.target.value)}
-                        placeholder="customer onboarding"
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      />
-                    </label>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Product type</p>
+                  {brand ? (
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{productType ?? "Not detected yet"}</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      <ShimmerPlaceholder className="h-5 w-40" />
+                      <p className="text-xs text-slate-500">Classifying offer model and category.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
 
-                    <label className="grid gap-1.5 text-sm md:col-span-2">
-                      <span className="font-semibold text-slate-700">Exclude topics</span>
-                      <textarea
-                        rows={2}
-                        value={excludeTopics}
-                        onChange={(event) => setExcludeTopics(event.target.value)}
-                        placeholder="medical advice"
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      />
-                    </label>
-
-                    <label className="grid gap-1.5 text-sm">
-                      <span className="font-semibold text-slate-700">ICP roles</span>
-                      <textarea
-                        rows={2}
-                        value={icpRoles}
-                        onChange={(event) => setIcpRoles(event.target.value)}
-                        placeholder="marketing lead"
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      />
-                    </label>
-
-                    <label className="grid gap-1.5 text-sm">
-                      <span className="font-semibold text-slate-700">ICP industries</span>
-                      <textarea
-                        rows={2}
-                        value={icpIndustries}
-                        onChange={(event) => setIcpIndustries(event.target.value)}
-                        placeholder="SaaS"
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      />
-                    </label>
-
-                    <label className="grid gap-1.5 text-sm">
-                      <span className="font-semibold text-slate-700">ICP pains</span>
-                      <textarea
-                        rows={2}
-                        value={icpPains}
-                        onChange={(event) => setIcpPains(event.target.value)}
-                        placeholder="slow onboarding"
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      />
-                    </label>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : null}
-
-        {step === 3 ? (
-          <motion.div key="step3" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-            <Card>
-              <CardHeader>
-                <CardTitle>Launch summary</CardTitle>
-                <CardDescription>Review and start. You can inspect and tune all steps in the project control room.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm md:grid-cols-2">
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Project</p>
-                    <p className="font-semibold text-slate-900">{name || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Domain</p>
-                    <p className="font-semibold text-slate-900">{domain || "-"}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Locale</p>
-                    <p className="font-semibold text-slate-900">{locale}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-wide text-slate-500">Preset</p>
-                    <p className="font-semibold text-slate-900">{selectedPreset.title}</p>
-                  </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Differentiators</p>
+                  {brand ? (
+                    differentiators.length > 0 ? (
+                      <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                        {differentiators.slice(0, 6).map((item) => (
+                          <li key={item} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-600">No differentiators returned yet.</p>
+                    )
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      <ShimmerPlaceholder className="h-4 w-full" />
+                      <ShimmerPlaceholder className="h-4 w-11/12" />
+                      <ShimmerPlaceholder className="h-4 w-4/5" />
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="font-semibold text-slate-900">What happens next</p>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
-                    <li>The project is created with your preset goals and constraints.</li>
-                    <li>If you choose Create + Start, the discovery loop starts and iterates until enough topics are accepted.</li>
-                    <li>You can monitor discovery and creation in their own dedicated project routes.</li>
-                  </ul>
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Suggested ICP niches</p>
+                  {brand ? (
+                    icpNicheNames.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {icpNicheNames.slice(0, 8).map((niche) => (
+                          <span
+                            key={niche}
+                            className="inline-flex items-center rounded-full border border-[#2f6f71]/30 bg-[#2f6f71]/10 px-2.5 py-1 text-xs font-semibold text-[#1e5052]"
+                          >
+                            {niche}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-slate-600">No ICP niches returned yet.</p>
+                    )
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      <ShimmerPlaceholder className="h-4 w-full" />
+                      <ShimmerPlaceholder className="h-4 w-5/6" />
+                    </div>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : null}
+              </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            {step > 1 ? (
-              <Button type="button" variant="outline" onClick={goBack}>
-                Back
-              </Button>
-            ) : null}
-          </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Scraped assets</p>
+                {brand ? (
+                  brand.brand_assets && brand.brand_assets.length > 0 ? (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {brand.brand_assets.slice(0, 6).map((asset) => (
+                        <button
+                          key={asset.asset_id}
+                          type="button"
+                          className="group rounded-lg border border-slate-200 bg-slate-50 p-2 text-left transition-colors hover:border-[#2f6f71]/50 hover:bg-white"
+                          onClick={() => setExpandedAsset({ url: asset.source_url, role: asset.role })}
+                        >
+                          {assetImageErrors[asset.asset_id] ? (
+                            <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-100 px-2 text-center text-xs text-slate-600">
+                              Preview unavailable
+                            </div>
+                          ) : (
+                            <img
+                              src={asset.source_url}
+                              alt={asset.role}
+                              loading="lazy"
+                              className="h-24 w-full rounded-md border border-slate-200 object-cover bg-white"
+                              onError={() =>
+                                setAssetImageErrors((previous) => ({
+                                  ...previous,
+                                  [asset.asset_id]: true,
+                                }))
+                              }
+                            />
+                          )}
+                          <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{asset.role}</p>
+                          <p className="truncate text-xs text-slate-600">{asset.source_url}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">No scraped assets found yet.</p>
+                  )
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {[1, 2, 3].map((placeholder) => (
+                      <div key={placeholder} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="flex items-center gap-3">
+                          <ShimmerPlaceholder className="h-8 w-8 rounded-lg" />
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <ShimmerPlaceholder className="h-3 w-24" />
+                            <ShimmerPlaceholder className="h-3 w-full" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {step < 3 ? (
-              <Button type="button" size="lg" onClick={goNext}>
-                Continue
+              {isTaskFailureLike ? (
+                <Card className="border-amber-300 bg-amber-50">
+                  <CardContent className="space-y-3 pt-5">
+                    <p className="text-sm font-semibold text-amber-900">
+                      Setup paused or failed. Retry onboarding to resume brand profile extraction.
+                    </p>
+                    <Link to={retryLink}>
+                      <Button type="button" variant="outline">
+                        Retry bootstrap/setup
+                      </Button>
+                    </Link>
+                  </CardContent>
+                </Card>
+              ) : null}
+
+              {brandError ? <p className="text-sm font-semibold text-rose-700">{brandError}</p> : null}
+            </CardContent>
+          </Card>
+
+          <Form method="post" className="flex flex-wrap items-center justify-between gap-3">
+            <input type="hidden" name="intent" value="startDiscovery" />
+            <input type="hidden" name="project_id" value={projectId ?? ""} />
+            <input type="hidden" name="setup_run_id" value={setupRunId ?? ""} />
+            <input type="hidden" name="setup_task_id" value={setupTaskId ?? ""} />
+
+            <Link to={retryLink}>
+              <Button type="button" variant="outline">
+                Restart onboarding
               </Button>
-            ) : (
-              <>
-                <Button type="submit" name="intent" value="createProject" variant="outline" size="lg" disabled={isSubmitting}>
-                  {isSubmitting ? "Working..." : "Create project"}
-                </Button>
-                <Button type="submit" name="intent" value="createAndStart" size="lg" disabled={isSubmitting}>
-                  {isSubmitting ? "Launching..." : "Create + Start pipeline"}
-                </Button>
-              </>
-            )}
+            </Link>
+
+            <Button type="submit" size="lg" disabled={!isTaskCompleted || isSubmitting}>
+              {isSubmitting ? "Starting discovery..." : "Start keyword research discovery"}
+            </Button>
+          </Form>
+        </motion.div>
+      ) : null}
+
+      {expandedAsset ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close image preview"
+            onClick={() => setExpandedAsset(null)}
+          />
+          <div className="relative z-10 w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-900">{expandedAsset.role}</p>
+              <Button type="button" variant="outline" size="sm" onClick={() => setExpandedAsset(null)}>
+                Close
+              </Button>
+            </div>
+            <img src={expandedAsset.url} alt={expandedAsset.role} className="max-h-[75vh] w-full rounded-lg border border-slate-200 object-contain" />
+            <a
+              href={expandedAsset.url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-flex text-xs font-semibold text-[#1e5052] hover:underline"
+            >
+              Open source URL
+            </a>
           </div>
         </div>
-      </Form>
+      ) : null}
     </div>
   );
 }

@@ -5,6 +5,7 @@ import type { Route } from "./+types/_dashboard.projects.$projectId.discovery";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
+import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
   formatDateTime,
@@ -16,11 +17,13 @@ import {
   isRunActive,
   isRunFailed,
   isRunPaused,
-  toPhaseBadgeClass,
-  toPhaseLabel,
 } from "~/lib/dashboard";
-import { fetchJson, classifyPipelineRuns } from "~/lib/pipeline-run.server";
-import { pickLatestRunForPhase, type ClassifiedPipelineRun } from "~/lib/pipeline-phase";
+import {
+  filterRunsByModule,
+  pickLatestRunForModule,
+  sortPipelineRunsNewest,
+} from "~/lib/pipeline-module";
+import { fetchJson } from "~/lib/pipeline-run.server";
 import type { components } from "~/types/api.generated";
 
 type ProjectResponse = components["schemas"]["ProjectResponse"];
@@ -41,7 +44,7 @@ type SnapshotStats = {
 
 type LoaderData = {
   project: ProjectResponse;
-  runs: ClassifiedPipelineRun[];
+  discoveryRuns: PipelineRunResponse[];
   latestRun: PipelineRunResponse | null;
   latestRunProgress: PipelineProgressResponse | null;
   keywordTotal: number;
@@ -97,11 +100,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
   if (runsResult.unauthorized) return handleUnauthorized(api);
 
-  const rawRuns = runsResult.ok && runsResult.data ? runsResult.data : [];
-  const classified = await classifyPipelineRuns(api, projectId, rawRuns);
-  if (classified.unauthorized) return handleUnauthorized(api);
-
-  const preferred = pickLatestRunForPhase(classified.runs, "discovery");
+  const rawRuns = sortPipelineRunsNewest(runsResult.ok && runsResult.data ? runsResult.data : []);
+  const discoveryRuns = filterRunsByModule(rawRuns, "discovery");
+  const preferred = pickLatestRunForModule(rawRuns, "discovery");
 
   const [keywordsResult, topicsResult, rankedTopicsResult] = await Promise.all([
     fetchJson<KeywordListResponse>(api, `/keywords/${projectId}?page=1&page_size=1`),
@@ -118,7 +119,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let snapshotStats: SnapshotStats = { iterationCount: 0, acceptedCount: 0, rejectedCount: 0, acceptanceRate: 0 };
 
   if (preferred) {
-    const runResult = await fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${preferred.run.id}`);
+    const runResult = await fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${preferred.id}`);
     if (runResult.unauthorized) return handleUnauthorized(api);
     if (runResult.ok && runResult.data) {
       latestRun = runResult.data;
@@ -126,7 +127,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       if (isRunActive(latestRun.status)) {
         const progressResult = await fetchJson<PipelineProgressResponse>(
           api,
-          `/pipeline/${projectId}/runs/${preferred.run.id}/progress`
+          `/pipeline/${projectId}/runs/${preferred.id}/progress`
         );
         if (progressResult.unauthorized) return handleUnauthorized(api);
         if (progressResult.ok && progressResult.data) {
@@ -136,7 +137,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
       const snapshotsResult = await fetchJson<DiscoveryTopicSnapshotResponse[]>(
         api,
-        `/pipeline/${projectId}/runs/${preferred.run.id}/discovery-snapshots`
+        `/pipeline/${projectId}/runs/${preferred.id}/discovery-snapshots`
       );
       if (snapshotsResult.unauthorized) return handleUnauthorized(api);
       if (snapshotsResult.ok && snapshotsResult.data) {
@@ -148,7 +149,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data(
     {
       project: projectResult.data,
-      runs: classified.runs,
+      discoveryRuns,
       latestRun,
       latestRunProgress,
       keywordTotal: keywordsResult.ok && keywordsResult.data ? keywordsResult.data.total : 0,
@@ -178,7 +179,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "startDiscovery") {
     const payload: PipelineStartRequest = {
-      mode: "discovery_loop",
+      mode: "discovery",
       start_step: 0,
       discovery: {
         max_iterations: 3,
@@ -190,7 +191,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         max_serp_servedness: 0.75,
         max_serp_competitor_density: 0.7,
         min_serp_intent_confidence: 0.35,
-        auto_start_content: true,
+        auto_dispatch_content_tasks: true,
       },
     };
 
@@ -202,8 +203,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (startResponse.status === 401) return handleUnauthorized(api);
 
     if (!startResponse.ok) {
+      const apiMessage = await readApiErrorMessage(startResponse);
       return data(
-        { error: "Unable to start discovery run." } satisfies ActionData,
+        {
+          error:
+            apiMessage ??
+            (startResponse.status === 409
+              ? "Discovery is already running for this project."
+              : "Unable to start discovery run."),
+        } satisfies ActionData,
         { status: startResponse.status, headers: await api.commit() }
       );
     }
@@ -215,15 +223,21 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "pausePipeline") {
-    const response = await api.fetch(`/pipeline/${projectId}/pause`, {
+    const runId = String(formData.get("run_id") ?? "").trim();
+    if (!runId) {
+      return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
+    }
+
+    const response = await api.fetch(`/pipeline/${projectId}/runs/${runId}/pause`, {
       method: "POST",
     });
 
     if (response.status === 401) return handleUnauthorized(api);
 
     if (!response.ok) {
+      const apiMessage = await readApiErrorMessage(response);
       return data(
-        { error: "Unable to pause pipeline." } satisfies ActionData,
+        { error: apiMessage ?? "Unable to pause selected run." } satisfies ActionData,
         { status: response.status, headers: await api.commit() }
       );
     }
@@ -245,8 +259,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (resumeResponse.status === 401) return handleUnauthorized(api);
 
   if (!resumeResponse.ok) {
+    const apiMessage = await readApiErrorMessage(resumeResponse);
     return data(
-      { error: "Unable to resume pipeline." } satisfies ActionData,
+      {
+        error:
+          apiMessage ??
+          (resumeResponse.status === 409
+            ? "Discovery is already running for this project."
+            : "Unable to resume pipeline."),
+      } satisfies ActionData,
       { status: resumeResponse.status, headers: await api.commit() }
     );
   }
@@ -259,7 +280,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 export default function ProjectDiscoveryHubRoute() {
   const {
     project,
-    runs,
+    discoveryRuns,
     latestRun,
     latestRunProgress,
     keywordTotal,
@@ -363,6 +384,7 @@ export default function ProjectDiscoveryHubRoute() {
                 <div className="flex gap-2">
                   <Form method="post">
                     <input type="hidden" name="intent" value="pausePipeline" />
+                    <input type="hidden" name="run_id" value={latestRun.id} />
                     <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
                       Pause
                     </Button>
@@ -484,35 +506,28 @@ export default function ProjectDiscoveryHubRoute() {
         )}
       </div>
 
-      {runs.length > 0 ? (
+      {discoveryRuns.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle>Recent runs</CardTitle>
-            <CardDescription>Discovery and pipeline run history for this project.</CardDescription>
+            <CardDescription>Recent discovery-module runs for this project.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
-            {runs.slice(0, 8).map((entry) => (
+            {discoveryRuns.slice(0, 8).map((run) => (
               <Link
-                key={entry.run.id}
-                to={`/projects/${project.id}/discovery/runs/${entry.run.id}`}
+                key={run.id}
+                to={`/projects/${project.id}/discovery/runs/${run.id}`}
                 className="block rounded-xl border border-slate-200 bg-white px-3 py-2 hover:border-slate-300"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-slate-900">
-                    {entry.run.id.slice(0, 8)} · {formatDateTime(entry.run.created_at)}
+                    {run.id.slice(0, 8)} · {formatDateTime(run.created_at)}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${toPhaseBadgeClass(entry.phase)}`}
-                    >
-                      {toPhaseLabel(entry.phase)}
-                    </span>
-                    <span
-                      className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(entry.run.status)}`}
-                    >
-                      {formatStatusLabel(entry.run.status)}
-                    </span>
-                  </div>
+                  <span
+                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(run.status)}`}
+                  >
+                    {formatStatusLabel(run.status)}
+                  </span>
                 </div>
               </Link>
             ))}

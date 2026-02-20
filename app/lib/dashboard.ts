@@ -144,6 +144,34 @@ export function normalizeDomain(input: string) {
     .toLowerCase();
 }
 
+export function sanitizeDomainInput(input: string) {
+  return input
+    .trim()
+    .replace(/^https?:\/\//i, "")
+    .replace(/^\/\//, "")
+    .split(/[/?#]/, 1)[0]
+    .replace(/:\d+$/, "")
+    .toLowerCase();
+}
+
+export function isValidDomain(input: string) {
+  const domain = sanitizeDomainInput(input);
+  if (!domain || domain.length > 253) return false;
+  if (!domain.includes(".") || domain.includes("..")) return false;
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)) return false;
+
+  const labels = domain.split(".");
+  if (labels.length < 2) return false;
+
+  const labelPattern = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/i;
+  if (labels.some((label) => !labelPattern.test(label))) return false;
+
+  const tld = labels[labels.length - 1] ?? "";
+  if (tld.length < 2 || /^\d+$/.test(tld)) return false;
+
+  return true;
+}
+
 export function suggestProjectNameFromDomain(domain: string) {
   const normalized = normalizeDomain(domain);
   if (!normalized) return "";

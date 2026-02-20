@@ -66,7 +66,7 @@ export default function AuthCallback() {
         <p className="text-slate-500 mb-6">{error}</p>
         <Link
           to="/login"
-          className="inline-flex items-center justify-center h-11 px-6 text-sm font-bold rounded-xl shadow-lg shadow-secondary/20 transition-all duration-200 bg-secondary text-white hover:scale-[1.02] active:scale-[0.98]"
+          className="inline-flex items-center justify-center h-11 px-6 text-sm font-bold rounded-xl shadow-lg shadow-secondary/20 transition-all duration-200 bg-secondary text-secondary-foreground hover:scale-[1.02] active:scale-[0.98]"
         >
           Back to login
         </Link>

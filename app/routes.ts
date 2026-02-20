@@ -9,9 +9,14 @@ export default [
   ]),
   layout("routes/_dashboard.tsx", [
     route("projects/new", "routes/_dashboard.projects.new.tsx"),
+    route("projects/setup-task/:taskId", "routes/_dashboard.projects.setup-task.$taskId.tsx"),
     route(
       "projects/:projectId/progress/:runId",
       "routes/_dashboard.projects.$projectId.progress.$runId.tsx"
+    ),
+    route(
+      "projects/:projectId/brand-visual-context",
+      "routes/_dashboard.projects.$projectId.brand-visual-context.tsx"
     ),
     route(
       "projects/:projectId/keyword-detail/:keywordId",

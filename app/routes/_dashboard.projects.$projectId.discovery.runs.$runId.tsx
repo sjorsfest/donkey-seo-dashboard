@@ -15,6 +15,7 @@ import type { Route } from "./+types/_dashboard.projects.$projectId.discovery.ru
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
+import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
   calculateOverallProgress,
@@ -33,8 +34,8 @@ import {
   isRunPaused,
   type IterationGroup,
 } from "~/lib/dashboard";
-import { fetchJson, classifyPipelineRuns } from "~/lib/pipeline-run.server";
-import { isPhaseMatch, pickLatestRunForPhase } from "~/lib/pipeline-phase";
+import { filterRunsByModule, isRunInModule, pickLatestRunForModule, sortPipelineRunsNewest } from "~/lib/pipeline-module";
+import { fetchJson } from "~/lib/pipeline-run.server";
 import { cn } from "~/lib/utils";
 import type { components } from "~/types/api.generated";
 
@@ -119,29 +120,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
   if (runsResult.unauthorized) return handleUnauthorized(api);
 
-  const rawRuns = runsResult.ok && runsResult.data ? runsResult.data : [];
-  const classified = await classifyPipelineRuns(api, projectId, rawRuns);
-  if (classified.unauthorized) return handleUnauthorized(api);
+  const rawRuns = sortPipelineRunsNewest(runsResult.ok && runsResult.data ? runsResult.data : []);
+  const discoveryRuns = filterRunsByModule(rawRuns, "discovery");
+  const requestedRun = rawRuns.find((entry) => entry.id === runId) ?? null;
 
-  const selectedRunSummary = classified.runs.find((entry) => entry.run.id === runId) ?? null;
+  if (requestedRun && isRunInModule(requestedRun, "content")) {
+    return redirect(`/projects/${projectId}/creation/runs/${requestedRun.id}`, {
+      headers: await api.commit(),
+    });
+  }
+
+  const selectedRunSummary = discoveryRuns.find((entry) => entry.id === runId) ?? null;
   if (!selectedRunSummary) {
-    const preferred = pickLatestRunForPhase(classified.runs, "discovery");
+    const preferred = pickLatestRunForModule(rawRuns, "discovery");
     if (preferred) {
-      return redirect(`/projects/${projectId}/discovery/runs/${preferred.run.id}`, {
+      return redirect(`/projects/${projectId}/discovery/runs/${preferred.id}`, {
         headers: await api.commit(),
       });
     }
 
     throw new Response("Pipeline run not found.", { status: 404 });
-  }
-
-  if (!isPhaseMatch(selectedRunSummary.phase, "discovery")) {
-    const preferred = pickLatestRunForPhase(classified.runs, "discovery");
-    if (preferred && preferred.run.id !== selectedRunSummary.run.id) {
-      return redirect(`/projects/${projectId}/discovery/runs/${preferred.run.id}`, {
-        headers: await api.commit(),
-      });
-    }
   }
 
   const [selectedRunResult, snapshotsResult] = await Promise.all([
@@ -156,6 +154,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const selectedRun = selectedRunResult.data;
+  if (!isRunInModule(selectedRun, "discovery")) {
+    if (isRunInModule(selectedRun, "content")) {
+      return redirect(`/projects/${projectId}/creation/runs/${selectedRun.id}`, {
+        headers: await api.commit(),
+      });
+    }
+
+    throw new Response("Run is not a discovery-module run.", { status: 409 });
+  }
   const snapshotsByIteration = snapshotsResult.ok && snapshotsResult.data
     ? buildSnapshotsByIteration(snapshotsResult.data)
     : {};
@@ -203,15 +210,21 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "pausePipeline") {
-    const response = await api.fetch(`/pipeline/${projectId}/pause`, {
+    const runId = String(formData.get("run_id") ?? params.runId ?? "").trim();
+    if (!runId) {
+      return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
+    }
+
+    const response = await api.fetch(`/pipeline/${projectId}/runs/${runId}/pause`, {
       method: "POST",
     });
 
     if (response.status === 401) return handleUnauthorized(api);
 
     if (!response.ok) {
+      const apiMessage = await readApiErrorMessage(response);
       return data(
-        { error: "Unable to pause pipeline." } satisfies ActionData,
+        { error: apiMessage ?? "Unable to pause selected run." } satisfies ActionData,
         { status: response.status, headers: await api.commit() }
       );
     }
@@ -233,8 +246,15 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (resumeResponse.status === 401) return handleUnauthorized(api);
 
   if (!resumeResponse.ok) {
+    const apiMessage = await readApiErrorMessage(resumeResponse);
     return data(
-      { error: "Unable to resume pipeline." } satisfies ActionData,
+      {
+        error:
+          apiMessage ??
+          (resumeResponse.status === 409
+            ? "Discovery is already running for this project."
+            : "Unable to resume pipeline."),
+      } satisfies ActionData,
       { status: resumeResponse.status, headers: await api.commit() }
     );
   }
@@ -566,6 +586,7 @@ export default function ProjectDiscoveryRunRoute() {
           <div className="flex items-center gap-2">
             <Form method="post">
               <input type="hidden" name="intent" value="pausePipeline" />
+              <input type="hidden" name="run_id" value={selectedRun.id} />
               <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
                 Pause
               </Button>
