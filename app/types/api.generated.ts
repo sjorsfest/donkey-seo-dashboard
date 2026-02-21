@@ -199,7 +199,7 @@ export interface paths {
         put?: never;
         /**
          * Bootstrap onboarding project
-         * @description Create a project and immediately queue setup pipeline steps 0-1 for domain + brand extraction.
+         * @description Create a project and immediately queue setup pipeline steps 1-5 for domain + brand extraction.
          */
         post: operations["bootstrap_onboarding_project_api_v1_projects_onboarding_bootstrap_post"];
         delete?: never;
@@ -603,6 +603,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/content/{project_id}/calendar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get content calendar
+         * @description Return scheduled content items keyed by proposed publication date with current production/publish state.
+         */
+        get: operations["get_content_calendar_api_v1_content__project_id__calendar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/content/{project_id}/briefs/{brief_id}": {
         parameters: {
             query?: never;
@@ -831,6 +851,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Queue health check
+         * @description Return Redis-backed queue lengths for setup/discovery/content modules.
+         */
+        get: operations["queue_health_check_health_queue_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1013,6 +1053,12 @@ export interface components {
             primary_keyword: string;
             /** Status */
             status: string;
+            /** Publish Status */
+            publish_status: string | null;
+            /** Published At */
+            published_at: string | null;
+            /** Published Url */
+            published_url: string | null;
             /** Current Version */
             current_version: number;
             /** Generation Model */
@@ -1076,6 +1122,12 @@ export interface components {
             primary_keyword: string;
             /** Status */
             status: string;
+            /** Publish Status */
+            publish_status: string | null;
+            /** Published At */
+            published_at: string | null;
+            /** Published Url */
+            published_url: string | null;
             /** Current Version */
             current_version: number;
             /** Generation Model */
@@ -1319,6 +1371,58 @@ export interface components {
             proposed_publication_date?: string | null;
             /** Status */
             status?: string | null;
+        };
+        /**
+         * ContentCalendarItemResponse
+         * @description Content calendar item for a proposed publication date.
+         */
+        ContentCalendarItemResponse: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Brief Id */
+            brief_id: string;
+            /** Topic Id */
+            topic_id: string;
+            /** Primary Keyword */
+            primary_keyword: string;
+            /** Working Title */
+            working_title: string | null;
+            /** Brief Status */
+            brief_status: string;
+            /** Has Writer Instructions */
+            has_writer_instructions: boolean;
+            /** Article Id */
+            article_id: string | null;
+            /** Article Title */
+            article_title: string | null;
+            /** Article Slug */
+            article_slug: string | null;
+            /** Article Status */
+            article_status: string | null;
+            /** Article Current Version */
+            article_current_version: number | null;
+            /** Publish Status */
+            publish_status: string | null;
+            /** Published At */
+            published_at: string | null;
+            /** Published Url */
+            published_url: string | null;
+            /**
+             * Calendar State
+             * @enum {string}
+             */
+            calendar_state: "brief_ready" | "writer_instructions_ready" | "article_ready" | "article_needs_review" | "published";
+        };
+        /**
+         * ContentCalendarResponse
+         * @description Content calendar response.
+         */
+        ContentCalendarResponse: {
+            /** Items */
+            items: components["schemas"]["ContentCalendarItemResponse"][];
         };
         /**
          * ContentPipelineConfig
@@ -1828,17 +1932,17 @@ export interface components {
          * PipelineStartRequest
          * @description Schema for starting a pipeline run.
          * @example {
-         *       "end_step": 8,
+         *       "end_step": 7,
          *       "mode": "discovery",
-         *       "start_step": 2,
+         *       "start_step": 1,
          *       "strategy": {
          *         "fit_threshold_profile": "aggressive"
          *       }
          *     }
          * @example {
-         *       "end_step": 1,
+         *       "end_step": 5,
          *       "mode": "setup",
-         *       "start_step": 0
+         *       "start_step": 1
          *     }
          * @example {
          *       "content": {
@@ -3820,6 +3924,42 @@ export interface operations {
             };
         };
     };
+    get_content_calendar_api_v1_content__project_id__calendar_get: {
+        parameters: {
+            query?: {
+                /** @description Inclusive lower date bound (YYYY-MM-DD). */
+                date_from?: string | null;
+                /** @description Inclusive upper date bound (YYYY-MM-DD). */
+                date_to?: string | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentCalendarResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_brief_api_v1_content__project_id__briefs__brief_id__get: {
         parameters: {
             query?: never;
@@ -4238,6 +4378,28 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    queue_health_check_health_queue_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };

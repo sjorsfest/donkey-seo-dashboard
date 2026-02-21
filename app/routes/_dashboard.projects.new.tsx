@@ -17,6 +17,12 @@ import {
   sanitizeDomainInput,
   suggestProjectNameFromDomain,
 } from "~/lib/dashboard";
+import { COUNTRY_OPTIONS, countryToLocale } from "~/lib/onboarding";
+import { pickLatestRunForModule } from "~/lib/pipeline-module";
+import { fetchJson } from "~/lib/pipeline-run.server";
+import { useOnboarding } from "~/components/onboarding/onboarding-context";
+import { OnboardingOverlay } from "~/components/onboarding/onboarding-overlay";
+import { DonkeyBubble } from "~/components/onboarding/donkey-bubble";
 import type { components } from "~/types/api.generated";
 import type { SetupPreset } from "~/types/dashboard";
 
@@ -64,17 +70,20 @@ const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: st
   {
     value: "traffic_growth",
     title: "Traffic Growth",
-    description: "Maximize discoverability and topical authority.",
+    description:
+      "Maximize organic visibility with high-volume keywords. Build topical authority and become the go-to resource in your niche.",
   },
   {
     value: "lead_generation",
     title: "Lead Generation",
-    description: "Prioritize keywords that convert to pipeline.",
+    description:
+      "Target comparison and buyer-intent queries that drive demo requests and sign-ups. Convert searchers into qualified leads.",
   },
   {
     value: "revenue_content",
     title: "Revenue Content",
-    description: "Focus on money-adjacent and comparison intent.",
+    description:
+      "Focus on money-page keywords — alternatives, pricing, use cases. Drive revenue through high-intent commercial content.",
   },
 ];
 
@@ -443,6 +452,7 @@ export async function action({ request }: Route.ActionArgs) {
     const setupRunId = String(formData.get("setup_run_id") ?? "").trim();
     const setupTaskId = String(formData.get("setup_task_id") ?? "").trim();
     const primaryLocale = String(formData.get("primary_locale") ?? "en-US").trim() || "en-US";
+    const primaryLanguage = String(formData.get("primary_language") ?? "en").trim() || "en";
     const preset = parseSetupPreset(String(formData.get("preset") ?? "traffic_growth"));
 
     if (!projectId || !setupRunId || !setupTaskId) {
@@ -453,6 +463,7 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const updatePayload: ProjectUpdate = {
+      primary_language: primaryLanguage,
       primary_locale: primaryLocale,
       goals: buildPresetGoals(preset),
       constraints: buildPresetConstraints(preset),
@@ -492,6 +503,22 @@ export async function action({ request }: Route.ActionArgs) {
     if (!projectId || !setupRunId || !setupTaskId) {
       return data({ error: "Missing onboarding context." } satisfies ActionData, {
         status: 400,
+        headers: await api.commit(),
+      });
+    }
+
+    const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
+    if (runsResult.unauthorized) return handleUnauthorized(api);
+    if (!runsResult.ok || !runsResult.data) {
+      return data(
+        { error: "Unable to verify existing discovery run." } satisfies ActionData,
+        { status: runsResult.status, headers: await api.commit() }
+      );
+    }
+
+    const existingDiscoveryRun = pickLatestRunForModule(runsResult.data, "discovery");
+    if (existingDiscoveryRun) {
+      return redirect(`/projects/${projectId}/discovery/runs/${encodeURIComponent(existingDiscoveryRun.id)}?created=1`, {
         headers: await api.commit(),
       });
     }
@@ -546,8 +573,15 @@ export default function ProjectSetupRoute() {
   const [expandedAsset, setExpandedAsset] = useState<{ url: string; role: string } | null>(null);
   const [assetImageErrors, setAssetImageErrors] = useState<Record<string, boolean>>({});
 
-  const [locale, setLocale] = useState(project?.primary_locale ?? "en-US");
+  const [country, setCountry] = useState("worldwide");
   const [preset, setPreset] = useState<SetupPreset>("traffic_growth");
+
+  const onboarding = useOnboarding();
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  const [strategyDismissed, setStrategyDismissed] = useState(false);
+  const [setupDismissed, setSetupDismissed] = useState(false);
+
+  const derivedLocale = useMemo(() => countryToLocale(country), [country]);
 
   const isSubmitting = navigation.state === "submitting";
   const domainIsValid = isValidDomain(domain);
@@ -681,6 +715,18 @@ export default function ProjectSetupRoute() {
     };
   }, [expandedAsset]);
 
+  // Advance onboarding phase when transitioning between steps
+  useEffect(() => {
+    if (step === 2 && onboarding.isPhase("welcome")) {
+      onboarding.advance({ projectId: projectId ?? undefined });
+      setStrategyDismissed(false);
+    }
+    if (step === 3 && onboarding.isPhase("strategy")) {
+      onboarding.advance();
+      setSetupDismissed(false);
+    }
+  }, [step]);
+
   function handleDomainChange(value: string) {
     const sanitized = sanitizeDomainInput(value);
     setDomain(sanitized);
@@ -807,10 +853,25 @@ export default function ProjectSetupRoute() {
 
             <div className="flex justify-end">
               <Button type="submit" size="lg" disabled={isSubmitting || !domainIsValid}>
-                {isSubmitting ? "Bootstrapping..." : "Create project + start setup"}
+                {isSubmitting ? "Setting up..." : "Next step"}
               </Button>
             </div>
           </Form>
+
+          {onboarding.isPhase("welcome") && !welcomeDismissed && (
+            <OnboardingOverlay
+              onNext={() => setWelcomeDismissed(true)}
+              nextLabel="Let's go!"
+            >
+              <DonkeyBubble>
+                <p className="font-display text-lg font-bold text-slate-900">Welcome to Donkey SEO!</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  First, enter your website domain. I'll use it to figure out what kind of company you have,
+                  so I can optimize keyword research just for you.
+                </p>
+              </DonkeyBubble>
+            </OnboardingOverlay>
+          )}
         </motion.div>
       ) : null}
 
@@ -822,30 +883,13 @@ export default function ProjectSetupRoute() {
             <input type="hidden" name="setup_run_id" value={setupRunId ?? ""} />
             <input type="hidden" name="setup_task_id" value={setupTaskId ?? ""} />
             <input type="hidden" name="preset" value={preset} />
-            <input type="hidden" name="primary_locale" value={locale} />
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Strategy + SEO inputs</CardTitle>
-                <CardDescription>Set the primary locale and preset constraints after bootstrap has started.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <label className="grid gap-1.5 text-sm">
-                  <span className="font-semibold text-slate-700">Primary locale</span>
-                  <Select value={locale} onChange={(event) => setLocale(event.target.value)}>
-                    <option value="en-US">English (United States)</option>
-                    <option value="en-GB">English (United Kingdom)</option>
-                    <option value="en-CA">English (Canada)</option>
-                    <option value="en-AU">English (Australia)</option>
-                  </Select>
-                </label>
-              </CardContent>
-            </Card>
+            <input type="hidden" name="primary_locale" value={derivedLocale.locale} />
+            <input type="hidden" name="primary_language" value={derivedLocale.language} />
 
             <Card>
               <CardHeader>
                 <CardTitle>Preset constraints</CardTitle>
-                <CardDescription>Choose a preset to apply default project constraints.</CardDescription>
+                <CardDescription>Choose a content strategy that matches your business goals.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-3 md:grid-cols-3">
                 {PRESET_OPTIONS.map((option) => {
@@ -860,10 +904,29 @@ export default function ProjectSetupRoute() {
                       }`}
                     >
                       <p className="font-display text-lg font-bold text-slate-900">{option.title}</p>
-                      <p className="mt-1 text-sm text-slate-600">{option.description}</p>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-600">{option.description}</p>
                     </button>
                   );
                 })}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Strategy + SEO inputs</CardTitle>
+                <CardDescription>Set the target country for your content and SEO strategy.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <label className="grid gap-1.5 text-sm">
+                  <span className="font-semibold text-slate-700">Target country</span>
+                  <Select value={country} onChange={(event) => setCountry(event.target.value)}>
+                    {COUNTRY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
               </CardContent>
             </Card>
 
@@ -878,6 +941,21 @@ export default function ProjectSetupRoute() {
               </Button>
             </div>
           </Form>
+
+          {onboarding.isPhase("strategy") && !strategyDismissed && (
+            <OnboardingOverlay
+              onNext={() => setStrategyDismissed(true)}
+              nextLabel="Got it!"
+            >
+              <DonkeyBubble>
+                <p className="font-display text-lg font-bold text-slate-900">Pick your strategy</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Choose a content strategy that matches your business goals. This tells me which keywords
+                  to prioritize during topic discovery. Then select your target country below.
+                </p>
+              </DonkeyBubble>
+            </OnboardingOverlay>
+          )}
         </motion.div>
       ) : null}
 
@@ -1080,9 +1158,37 @@ export default function ProjectSetupRoute() {
             </Link>
 
             <Button type="submit" size="lg" disabled={!isTaskCompleted || isSubmitting}>
-              {isSubmitting ? "Starting discovery..." : "Start keyword research discovery"}
+              {isSubmitting ? "Starting discovery..." : "Start Topic Discovery"}
             </Button>
           </Form>
+
+          {onboarding.isPhase("setup_progress") && !setupDismissed && (
+            <OnboardingOverlay
+              onNext={() => setSetupDismissed(true)}
+              nextLabel="Got it!"
+            >
+              <DonkeyBubble>
+                {isTaskCompleted ? (
+                  <>
+                    <p className="font-display text-lg font-bold text-slate-900">Your brand profile is ready!</p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                      I've extracted your company details, differentiators, and target audience.
+                      This data will power your SEO keyword research. Click "Start Topic Discovery"
+                      to kick off the first research loop!
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-display text-lg font-bold text-slate-900">Hang tight!</p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                      I'm analyzing your website to extract brand profile data. This shouldn't take
+                      long — maybe grab a coffee while I work my magic.
+                    </p>
+                  </>
+                )}
+              </DonkeyBubble>
+            </OnboardingOverlay>
+          )}
         </motion.div>
       ) : null}
 

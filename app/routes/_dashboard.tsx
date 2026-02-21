@@ -11,10 +11,12 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
 import {
   BarChart3,
+  CalendarDays,
   Compass,
   LogOut,
   FolderKanban,
   PenSquare,
+  Settings2,
 } from "lucide-react";
 import type { Route } from "./+types/_dashboard";
 import { Button } from "~/components/ui/button";
@@ -22,6 +24,8 @@ import { Badge } from "~/components/ui/badge";
 import { ApiClient } from "~/lib/api.server";
 import { cn } from "~/lib/utils";
 import type { components } from "~/types/api.generated";
+import { OnboardingProvider, useOnboarding } from "~/components/onboarding/onboarding-context";
+import { NavExplainerOverlay } from "~/components/onboarding/nav-explainer-overlay";
 
 type UserResponse = components["schemas"]["UserResponse"];
 
@@ -49,9 +53,22 @@ export async function loader({ request }: Route.LoaderArgs) {
   const api = new ApiClient(request);
   const user = await api.requireUser();
 
+  // Lightweight check so the onboarding provider knows if this is a new user.
+  let projectCount = -1;
+  try {
+    const countRes = await api.fetch("/projects/?limit=1");
+    if (countRes.ok) {
+      const payload = (await countRes.json()) as { items?: unknown[] };
+      projectCount = payload.items?.length ?? -1;
+    }
+  } catch {
+    // non-critical — provider will skip onboarding if unknown
+  }
+
   return data(
     {
       user,
+      projectCount,
       // Keep entitlement logic at shell level; wire these to API fields when available.
       entitlements: {
         hasProPlan: false,
@@ -91,6 +108,23 @@ const navItems: NavItem[] = [
     isActive: (pathname) => pathname.includes("/creation"),
   },
   {
+    id: "calendar",
+    label: "Calendar",
+    icon: CalendarDays,
+    colorClass: "text-fuchsia-600",
+    getPath: (context) =>
+      context.activeProjectId ? `/projects/${context.activeProjectId}/calendar` : "/projects",
+    isActive: (pathname) => pathname.includes("/calendar"),
+  },
+  {
+    id: "configuration",
+    label: "Configuration",
+    icon: Settings2,
+    colorClass: "text-sky-600",
+    path: "/configuration",
+    isActive: (pathname) => pathname.startsWith("/configuration"),
+  },
+  {
     id: "insights",
     label: "Insights",
     icon: BarChart3,
@@ -110,12 +144,29 @@ function getActiveProjectId(pathname: string): string | null {
 }
 
 export default function DashboardLayout() {
-  const { user, entitlements } = useLoaderData<typeof loader>() as {
+  const { user, entitlements, projectCount } = useLoaderData<typeof loader>() as {
     user: UserResponse;
+    projectCount: number;
     entitlements: { hasProPlan: boolean };
   };
+
+  return (
+    <OnboardingProvider projectCount={projectCount}>
+      <DashboardLayoutInner user={user} entitlements={entitlements} />
+    </OnboardingProvider>
+  );
+}
+
+function DashboardLayoutInner({
+  user,
+  entitlements,
+}: {
+  user: UserResponse;
+  entitlements: { hasProPlan: boolean };
+}) {
   const location = useLocation();
   const prefersReducedMotion = useReducedMotion();
+  const onboarding = useOnboarding();
 
   const [tooltipItemId, setTooltipItemId] = useState<string | null>(null);
 
@@ -142,8 +193,12 @@ export default function DashboardLayout() {
   const renderNavItem = (item: NavItem, isMobile = false) => {
     const href = item.path ?? item.getPath?.(navContext) ?? null;
     const isPlanLocked = Boolean(item.requiresPlan && !navContext.hasProPlan);
-    const isLocked = !isPlanLocked && !href;
-    const isDisabled = isPlanLocked || isLocked;
+    const isOnboardingLocked =
+      onboarding.state.isActive &&
+      onboarding.state.phase !== "nav_explainer" &&
+      item.id !== "projects";
+    const isLocked = !isPlanLocked && !isOnboardingLocked && !href;
+    const isDisabled = isPlanLocked || isLocked || isOnboardingLocked;
 
     const isActive = item.isActive
       ? item.isActive(location.pathname)
@@ -155,9 +210,11 @@ export default function DashboardLayout() {
 
     const message = isPlanLocked
       ? item.planLockedMessage ?? "Upgrade required to access this section."
-      : isLocked
-        ? item.lockedMessage ?? "This section is currently locked."
-        : "";
+      : isOnboardingLocked
+        ? "Complete the guided setup to unlock this section."
+        : isLocked
+          ? item.lockedMessage ?? "This section is currently locked."
+          : "";
 
     const baseItemClass = cn(
       isMobile ? "flex-1 flex justify-center" : "block w-full text-left",
@@ -226,6 +283,7 @@ export default function DashboardLayout() {
           type="button"
           aria-disabled="true"
           title={message}
+          data-nav-id={item.id}
           className={cn("relative", baseItemClass)}
           onMouseEnter={() => !isMobile && setTooltipItemId(item.id)}
           onMouseLeave={() => !isMobile && setTooltipItemId(null)}
@@ -245,7 +303,7 @@ export default function DashboardLayout() {
     if (!href) return null;
 
     return (
-      <Link key={item.id} to={href} className={baseItemClass}>
+      <Link key={item.id} to={href} data-nav-id={item.id} className={baseItemClass}>
         {navContent}
       </Link>
     );
@@ -350,6 +408,12 @@ export default function DashboardLayout() {
           {navItems.filter((item) => !item.hideOnMobile).map((item) => renderNavItem(item, true))}
         </div>
       </nav>
+
+      {onboarding.isPhase("nav_explainer") && (
+        <NavExplainerOverlay
+          onComplete={() => onboarding.advance()}
+        />
+      )}
     </div>
   );
 }

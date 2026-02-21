@@ -4,13 +4,11 @@ import { Search, Layers, RefreshCw } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.discovery";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Progress } from "~/components/ui/progress";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
   formatDateTime,
   formatStatusLabel,
-  formatStepName,
   getStatusBadgeClass,
   isAcceptedDecision,
   isRejectedDecision,
@@ -19,7 +17,6 @@ import {
   isRunPaused,
 } from "~/lib/dashboard";
 import {
-  filterRunsByModule,
   pickLatestRunForModule,
   sortPipelineRunsNewest,
 } from "~/lib/pipeline-module";
@@ -44,7 +41,6 @@ type SnapshotStats = {
 
 type LoaderData = {
   project: ProjectResponse;
-  discoveryRuns: PipelineRunResponse[];
   latestRun: PipelineRunResponse | null;
   latestRunProgress: PipelineProgressResponse | null;
   keywordTotal: number;
@@ -101,7 +97,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (runsResult.unauthorized) return handleUnauthorized(api);
 
   const rawRuns = sortPipelineRunsNewest(runsResult.ok && runsResult.data ? runsResult.data : []);
-  const discoveryRuns = filterRunsByModule(rawRuns, "discovery");
   const preferred = pickLatestRunForModule(rawRuns, "discovery");
 
   const [keywordsResult, topicsResult, rankedTopicsResult] = await Promise.all([
@@ -149,7 +144,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   return data(
     {
       project: projectResult.data,
-      discoveryRuns,
       latestRun,
       latestRunProgress,
       keywordTotal: keywordsResult.ok && keywordsResult.data ? keywordsResult.data.total : 0,
@@ -178,6 +172,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "startDiscovery") {
+    const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
+    if (runsResult.unauthorized) return handleUnauthorized(api);
+    if (!runsResult.ok || !runsResult.data) {
+      return data(
+        { error: "Unable to verify existing discovery run." } satisfies ActionData,
+        { status: runsResult.status, headers: await api.commit() }
+      );
+    }
+
+    const existingDiscoveryRun = pickLatestRunForModule(runsResult.data, "discovery");
+    if (existingDiscoveryRun) {
+      return redirect(`/projects/${projectId}/discovery/runs/${encodeURIComponent(existingDiscoveryRun.id)}`, {
+        headers: await api.commit(),
+      });
+    }
+
     const payload: PipelineStartRequest = {
       mode: "discovery",
       start_step: 0,
@@ -277,10 +287,95 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
 }
 
+const DISCOVERY_STEPS = [
+  { number: 2, label: "Seeds" },
+  { number: 3, label: "Expansion" },
+  { number: 4, label: "Metrics" },
+  { number: 5, label: "Intent" },
+  { number: 6, label: "Clustering" },
+  { number: 7, label: "Prioritization" },
+  { number: 8, label: "SERP" },
+] as const;
+
+type StepExecution = components["schemas"]["StepExecutionResponse"];
+
+const SUCCESS_STEP = new Set(["completed", "success", "succeeded", "done"]);
+
+function getStepState(
+  step: (typeof DISCOVERY_STEPS)[number],
+  currentStep: number | null,
+  executions: StepExecution[],
+  isActive: boolean,
+): "completed" | "running" | "idle" {
+  const exec = executions.find((e) => e.step_number === step.number);
+  if (exec && SUCCESS_STEP.has(exec.status.toLowerCase())) return "completed";
+  if (currentStep === step.number && isActive) return "running";
+  if (exec && exec.status.toLowerCase() === "running") return "running";
+  return "idle";
+}
+
+function DiscoveryStepTimeline({
+  currentStep,
+  steps,
+  isActive,
+}: {
+  currentStep: number | null;
+  steps: StepExecution[];
+  isActive: boolean;
+}) {
+  return (
+    <div className="py-2">
+      <div className="flex items-center">
+        {DISCOVERY_STEPS.map((step, i) => {
+          const state = getStepState(step, currentStep, steps, isActive);
+          return (
+            <div key={step.number} className="flex items-center" style={{ flex: i < DISCOVERY_STEPS.length - 1 ? 1 : undefined }}>
+              {/* Node */}
+              <div className="flex flex-col items-center gap-1.5">
+                <div
+                  className={`relative flex h-3 w-3 items-center justify-center rounded-full transition-colors ${
+                    state === "completed"
+                      ? "bg-emerald-500"
+                      : state === "running"
+                        ? "bg-amber-400"
+                        : "bg-slate-200"
+                  }`}
+                >
+                  {state === "running" && (
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-50" />
+                  )}
+                </div>
+                <span
+                  className={`text-[10px] leading-none whitespace-nowrap ${
+                    state === "completed"
+                      ? "font-medium text-emerald-700"
+                      : state === "running"
+                        ? "font-semibold text-amber-700"
+                        : "text-slate-400"
+                  }`}
+                >
+                  {step.label}
+                </span>
+              </div>
+              {/* Connector line */}
+              {i < DISCOVERY_STEPS.length - 1 && (
+                <div
+                  className={`mx-1 h-[2px] flex-1 rounded-full transition-colors ${
+                    state === "completed" ? "bg-emerald-300" : "bg-slate-200"
+                  }`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectDiscoveryHubRoute() {
   const {
     project,
-    discoveryRuns,
     latestRun,
     latestRunProgress,
     keywordTotal,
@@ -320,8 +415,7 @@ export default function ProjectDiscoveryHubRoute() {
     };
   }, [project.id, latestRun?.id, effectiveStatus]);
 
-  const overallProgress = liveProgress?.overall_progress ?? 0;
-  const currentStepName = formatStepName(liveProgress?.current_step_name ?? null);
+  const currentStepNumber = liveProgress?.current_step ?? null;
 
   return (
     <div className="space-y-6">
@@ -367,45 +461,34 @@ export default function ProjectDiscoveryHubRoute() {
                     {formatStatusLabel(effectiveStatus)}
                   </span>
                 </div>
-                <Progress value={overallProgress} />
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                  <p>Current step: {currentStepName}</p>
+                  <p>
+                    Current step:{" "}
+                    {currentStepNumber ? DISCOVERY_STEPS.find((s) => s.number === currentStepNumber)?.label ?? "Unknown" : "N/A"}
+                  </p>
                   <p>Started: {formatDateTime(latestRun.started_at ?? latestRun.created_at)}</p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
+              <div className="flex items-center gap-2">
                 <Form method="post">
-                  <input type="hidden" name="intent" value="startDiscovery" />
-                  <Button type="submit" className="w-full" disabled={isRunActive(effectiveStatus)}>
-                    Start new run
+                  <input type="hidden" name="intent" value="pausePipeline" />
+                  <input type="hidden" name="run_id" value={latestRun.id} />
+                  <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
+                    Pause
                   </Button>
                 </Form>
-                <div className="flex gap-2">
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="pausePipeline" />
-                    <input type="hidden" name="run_id" value={latestRun.id} />
-                    <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
-                      Pause
-                    </Button>
-                  </Form>
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="resumePipeline" />
-                    <input type="hidden" name="run_id" value={latestRun.id} />
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      disabled={!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)}
-                    >
-                      Resume
-                    </Button>
-                  </Form>
-                </div>
-                <Link to={`/projects/${project.id}/discovery/runs/${latestRun.id}`} className="w-full">
-                  <Button variant="outline" className="w-full">
-                    View run details
+                <Form method="post">
+                  <input type="hidden" name="intent" value="resumePipeline" />
+                  <input type="hidden" name="run_id" value={latestRun.id} />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)}
+                  >
+                    Resume
                   </Button>
-                </Link>
+                </Form>
               </div>
             </div>
           </CardContent>
@@ -506,31 +589,17 @@ export default function ProjectDiscoveryHubRoute() {
         )}
       </div>
 
-      {discoveryRuns.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent runs</CardTitle>
-            <CardDescription>Recent discovery-module runs for this project.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {discoveryRuns.slice(0, 8).map((run) => (
-              <Link
-                key={run.id}
-                to={`/projects/${project.id}/discovery/runs/${run.id}`}
-                className="block rounded-xl border border-slate-200 bg-white px-3 py-2 hover:border-slate-300"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {run.id.slice(0, 8)} · {formatDateTime(run.created_at)}
-                  </p>
-                  <span
-                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(run.status)}`}
-                  >
-                    {formatStatusLabel(run.status)}
-                  </span>
-                </div>
-              </Link>
-            ))}
+      {latestRun ? (
+        <Card className="border-slate-200 bg-white">
+          <CardContent className="pt-5">
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Discovery Pipeline Progress</p>
+              <DiscoveryStepTimeline
+                currentStep={currentStepNumber}
+                steps={liveProgress?.steps ?? latestRun?.step_executions ?? []}
+                isActive={isRunActive(effectiveStatus)}
+              />
+            </div>
           </CardContent>
         </Card>
       ) : null}

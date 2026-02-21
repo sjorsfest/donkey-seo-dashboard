@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { motion } from "framer-motion";
-import { Link, data, redirect, useFetcher, useLoaderData } from "react-router";
+import { Link, data, redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
+import { useOnboarding } from "~/components/onboarding/onboarding-context";
 import type { Route } from "./+types/_dashboard.projects._index";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
@@ -178,6 +179,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function ProjectsOverviewRoute() {
   const { projects, summaryByProject } = useLoaderData<typeof loader>() as LoaderData;
+  const navigate = useNavigate();
+  const onboarding = useOnboarding();
+
+  useEffect(() => {
+    if (projects.length === 0 && onboarding.isPhase("welcome")) {
+      navigate("/projects/new", { replace: true });
+    }
+  }, [projects.length, onboarding.state.phase]);
 
   return (
     <div className="space-y-8">

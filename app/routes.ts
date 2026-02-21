@@ -8,6 +8,7 @@ export default [
     route("auth/callback", "routes/auth.callback.tsx"),
   ]),
   layout("routes/_dashboard.tsx", [
+    route("configuration", "routes/_dashboard.configuration.tsx"),
     route("projects/new", "routes/_dashboard.projects.new.tsx"),
     route("projects/setup-task/:taskId", "routes/_dashboard.projects.setup-task.$taskId.tsx"),
     route(
@@ -23,6 +24,7 @@ export default [
       "routes/_dashboard.projects.$projectId.keyword-detail.$keywordId.tsx"
     ),
     route("projects/:projectId/discovery", "routes/_dashboard.projects.$projectId.discovery.tsx"),
+    route("projects/:projectId/calendar", "routes/_dashboard.projects.$projectId.calendar.tsx"),
     route(
       "projects/:projectId/discovery/keywords",
       "routes/_dashboard.projects.$projectId.discovery.keywords.tsx"

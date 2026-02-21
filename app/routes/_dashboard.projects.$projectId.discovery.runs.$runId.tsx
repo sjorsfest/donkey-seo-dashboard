@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Form,
@@ -9,7 +9,11 @@ import {
   useFetcher,
   useLoaderData,
   useRevalidator,
+  useSearchParams,
 } from "react-router";
+import { useOnboarding } from "~/components/onboarding/onboarding-context";
+import { OnboardingOverlay } from "~/components/onboarding/onboarding-overlay";
+import { DonkeyBubble } from "~/components/onboarding/donkey-bubble";
 import { RefreshCw } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.discovery.runs.$runId";
 import { Button } from "~/components/ui/button";
@@ -34,7 +38,7 @@ import {
   isRunPaused,
   type IterationGroup,
 } from "~/lib/dashboard";
-import { filterRunsByModule, isRunInModule, pickLatestRunForModule, sortPipelineRunsNewest } from "~/lib/pipeline-module";
+import { isRunInModule, pickLatestRunForModule, sortPipelineRunsNewest } from "~/lib/pipeline-module";
 import { fetchJson } from "~/lib/pipeline-run.server";
 import { cn } from "~/lib/utils";
 import type { components } from "~/types/api.generated";
@@ -121,8 +125,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (runsResult.unauthorized) return handleUnauthorized(api);
 
   const rawRuns = sortPipelineRunsNewest(runsResult.ok && runsResult.data ? runsResult.data : []);
-  const discoveryRuns = filterRunsByModule(rawRuns, "discovery");
   const requestedRun = rawRuns.find((entry) => entry.id === runId) ?? null;
+  const preferredDiscoveryRun = pickLatestRunForModule(rawRuns, "discovery");
 
   if (requestedRun && isRunInModule(requestedRun, "content")) {
     return redirect(`/projects/${projectId}/creation/runs/${requestedRun.id}`, {
@@ -130,21 +134,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     });
   }
 
-  const selectedRunSummary = discoveryRuns.find((entry) => entry.id === runId) ?? null;
-  if (!selectedRunSummary) {
-    const preferred = pickLatestRunForModule(rawRuns, "discovery");
-    if (preferred) {
-      return redirect(`/projects/${projectId}/discovery/runs/${preferred.id}`, {
-        headers: await api.commit(),
-      });
-    }
-
+  if (!preferredDiscoveryRun) {
     throw new Response("Pipeline run not found.", { status: 404 });
   }
 
+  if (runId !== preferredDiscoveryRun.id) {
+    const canonicalPathname = url.pathname.replace(
+      /\/discovery\/runs\/[^/]+/,
+      `/discovery/runs/${encodeURIComponent(preferredDiscoveryRun.id)}`
+    );
+    return redirect(`${canonicalPathname}${url.search}`, {
+      headers: await api.commit(),
+    });
+  }
+
+  const selectedRunId = preferredDiscoveryRun.id;
   const [selectedRunResult, snapshotsResult] = await Promise.all([
-    fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${runId}`),
-    fetchJson<DiscoveryTopicSnapshotResponse[]>(api, `/pipeline/${projectId}/runs/${runId}/discovery-snapshots`),
+    fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${selectedRunId}`),
+    fetchJson<DiscoveryTopicSnapshotResponse[]>(api, `/pipeline/${projectId}/runs/${selectedRunId}/discovery-snapshots`),
   ]);
   if (selectedRunResult.unauthorized) return handleUnauthorized(api);
   if (snapshotsResult.unauthorized) return handleUnauthorized(api);
@@ -169,7 +176,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   let progress: PipelineProgressResponse | null = null;
   if (isRunActive(selectedRun.status)) {
-    const progressResult = await fetchJson<PipelineProgressResponse>(api, `/pipeline/${projectId}/runs/${runId}/progress`);
+    const progressResult = await fetchJson<PipelineProgressResponse>(
+      api,
+      `/pipeline/${projectId}/runs/${selectedRunId}/progress`
+    );
     if (progressResult.unauthorized) return handleUnauthorized(api);
     if (progressResult.ok && progressResult.data) {
       progress = progressResult.data;
@@ -209,12 +219,32 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
   }
 
-  if (intent === "pausePipeline") {
-    const runId = String(formData.get("run_id") ?? params.runId ?? "").trim();
-    if (!runId) {
-      return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
-    }
+  const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
+  if (runsResult.unauthorized) return handleUnauthorized(api);
+  if (!runsResult.ok || !runsResult.data) {
+    return data(
+      { error: "Unable to verify discovery run state." } satisfies ActionData,
+      { status: runsResult.status, headers: await api.commit() }
+    );
+  }
 
+  const preferredDiscoveryRun = pickLatestRunForModule(runsResult.data, "discovery");
+  if (!preferredDiscoveryRun) {
+    return data({ error: "Discovery run not found." } satisfies ActionData, {
+      status: 404,
+      headers: await api.commit(),
+    });
+  }
+
+  const requestUrl = new URL(request.url);
+  const canonicalPathname = requestUrl.pathname.replace(
+    /\/discovery\/runs\/[^/]+/,
+    `/discovery/runs/${encodeURIComponent(preferredDiscoveryRun.id)}`
+  );
+  const canonicalUrl = `${canonicalPathname}${requestUrl.search}`;
+  const runId = preferredDiscoveryRun.id;
+
+  if (intent === "pausePipeline") {
     const response = await api.fetch(`/pipeline/${projectId}/runs/${runId}/pause`, {
       method: "POST",
     });
@@ -229,14 +259,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       );
     }
 
-    return redirect(new URL(request.url).pathname, {
+    return redirect(canonicalUrl, {
       headers: await api.commit(),
     });
-  }
-
-  const runId = String(formData.get("run_id") ?? params.runId ?? "").trim();
-  if (!runId) {
-    return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
   }
 
   const resumeResponse = await api.fetch(`/pipeline/${projectId}/resume/${runId}`, {
@@ -259,7 +284,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  return redirect(new URL(request.url).pathname, {
+  return redirect(canonicalUrl, {
     headers: await api.commit(),
   });
 }
@@ -490,6 +515,17 @@ export default function ProjectDiscoveryRunRoute() {
   } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const revalidator = useRevalidator();
+  const [searchParams] = useSearchParams();
+  const onboarding = useOnboarding();
+
+  const isNewlyCreated = searchParams.get("created") === "1";
+
+  // Advance onboarding when arriving from project creation
+  useEffect(() => {
+    if (isNewlyCreated && onboarding.isPhase("setup_progress")) {
+      onboarding.advance({ runId: selectedRun.id });
+    }
+  }, [isNewlyCreated]);
 
   const progressFetcher = useFetcher<PipelineProgressResponse>();
   const isProgressRequestInFlightRef = useRef(false);
@@ -707,6 +743,21 @@ export default function ProjectDiscoveryRunRoute() {
           )}
         </CardContent>
       </Card>
+
+      {onboarding.isPhase("congratulations") && (
+        <OnboardingOverlay
+          onNext={() => onboarding.advance()}
+          nextLabel="Show me around!"
+        >
+          <DonkeyBubble>
+            <p className="font-display text-lg font-bold text-slate-900">Congratulations!</p>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              You've set up your automated SEO content pipeline. Your first topic discovery run is
+              now underway. Let me show you around the dashboard!
+            </p>
+          </DonkeyBubble>
+        </OnboardingOverlay>
+      )}
     </div>
   );
 }
