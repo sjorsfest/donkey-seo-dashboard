@@ -382,8 +382,8 @@ export default function ProjectCalendarRoute() {
             <Link to={`/projects/${project.id}/creation`}>
               <Button variant="outline">Open creation</Button>
             </Link>
-            <Link to="/projects">
-              <Button variant="outline">Back to projects</Button>
+            <Link to="/project">
+              <Button variant="outline">Back to project</Button>
             </Link>
           </div>
         </div>

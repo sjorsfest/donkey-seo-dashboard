@@ -20,7 +20,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSession(request.headers.get("Cookie"));
   const existingAccessToken = session.get("accessToken") as string | undefined;
   if (existingAccessToken) {
-    return redirect("/projects");
+    return redirect("/project");
   }
 
   const currentUrl = new URL(request.url);
@@ -36,7 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     session.set("accessToken", accessToken);
     session.set("refreshToken", refreshToken);
 
-    return redirect("/projects", {
+    return redirect("/project", {
       headers: {
         "Set-Cookie": await commitSession(session),
       },

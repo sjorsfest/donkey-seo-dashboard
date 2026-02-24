@@ -1,38 +1,65 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "~/components/ui/button";
 import { DonkeyBubble } from "./donkey-bubble";
 
-const NAV_STEPS = [
+const NAV_STEPS: Array<{ navId: string; title: string; description: ReactNode }> = [
   {
-    navId: "projects",
-    title: "Projects",
-    description:
-      "This is where you manage your brand info and main content strategy. Each project is tied to a website domain.",
+    navId: "active-project",
+    title: "Your project",
+    description: (
+      <>
+        This is your <strong className="text-slate-800">active project</strong>. Click it to see
+        project settings. On <strong className="text-slate-800">Growth/Agency</strong> plans you can
+        manage multiple projects using the icons on the right.
+      </>
+    ),
   },
   {
     navId: "discovery",
     title: "Discovery",
-    description:
-      "Here you can see the keywords we examine, topics we create for you, and how often the research loop runs.",
+    description: (
+      <>
+        This is where the magic happens. See the{" "}
+        <strong className="text-slate-800">keywords</strong> I'm researching, the{" "}
+        <strong className="text-slate-800">topics</strong> I create for you, and track each{" "}
+        <strong className="text-slate-800">research loop</strong> as it runs.
+      </>
+    ),
   },
   {
     navId: "content",
     title: "Content",
-    description:
-      "This is where you'll find articles written based on the topics we discover. Review, edit, and publish them from here.",
+    description: (
+      <>
+        Find all <strong className="text-slate-800">articles</strong> written from discovered topics.
+        You can <strong className="text-slate-800">review</strong>,{" "}
+        <strong className="text-slate-800">edit</strong>, and{" "}
+        <strong className="text-slate-800">publish</strong> them directly from here.
+      </>
+    ),
   },
   {
     navId: "calendar",
     title: "Calendar",
-    description:
-      "Use this planning board to see exactly when briefs and articles are scheduled, then open a day for status breakdowns.",
+    description: (
+      <>
+        A visual <strong className="text-slate-800">planning board</strong> showing when briefs and
+        articles are scheduled. Open any day to see{" "}
+        <strong className="text-slate-800">status breakdowns</strong> at a glance.
+      </>
+    ),
   },
   {
-    navId: "configuration",
-    title: "Configuration",
-    description:
-      "Find docs for setting up the Donkey SEO client in your repo, handling incoming webhooks, and automatic CMS integration.",
+    navId: "billing",
+    title: "Billing",
+    description: (
+      <>
+        Manage your <strong className="text-slate-800">subscription</strong> and{" "}
+        <strong className="text-slate-800">usage limits</strong>. You can also find docs for the
+        Donkey SEO client, webhooks, and <strong className="text-slate-800">CMS integration</strong>.
+      </>
+    ),
   },
 ];
 
@@ -101,10 +128,7 @@ export function NavExplainerOverlay({
           transition={{ duration: 0.25 }}
           className="w-full max-w-lg"
         >
-          <DonkeyBubble>
-            <p className="font-display text-lg font-bold text-slate-900">
-              {step.title}
-            </p>
+          <DonkeyBubble title={step.title}>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">
               {step.description}
             </p>

@@ -1,6 +1,5 @@
 import { data, redirect } from "react-router";
 import type { Route } from "./+types/_dashboard.projects.$projectId.brand-visual-context";
-import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import type { components } from "~/types/api.generated";
 
@@ -33,14 +32,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   if (!response.ok) {
-    const apiMessage = await readApiErrorMessage(response);
     return data(
       {
         brand: null,
-        error: apiMessage ?? "Unable to fetch brand visual context.",
       } satisfies LoaderData,
       {
-        status: response.status,
         headers: await api.commit(),
       }
     );

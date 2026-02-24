@@ -164,6 +164,114 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/billing/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List billing plans
+         * @description Return configured Stripe-backed pricing options for dashboard plan selection.
+         */
+        get: operations["list_billing_plans_api_v1_billing_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current billing status */
+        get: operations["get_my_billing_status_api_v1_billing_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get current usage
+         * @description Return article usage counters for the current account. Paid plans use monthly windows; free users use lifetime window.
+         */
+        get: operations["get_my_usage_api_v1_billing_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/checkout-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Stripe checkout session */
+        post: operations["create_checkout_session_api_v1_billing_checkout_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/portal-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Stripe customer portal session */
+        post: operations["create_billing_portal_session_api_v1_billing_portal_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/billing/webhooks/stripe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stripe webhook receiver */
+        post: operations["stripe_webhook_api_v1_billing_webhooks_stripe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/": {
         parameters: {
             query?: never;
@@ -876,6 +984,84 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * BillingPlansResponse
+         * @description All plan options for dashboard pricing cards.
+         */
+        BillingPlansResponse: {
+            /** Publishable Key */
+            publishable_key: string | null;
+            /** Trial Days */
+            trial_days: number;
+            /** Plans */
+            plans: components["schemas"]["PlanPriceOptionResponse"][];
+        };
+        /**
+         * BillingPortalRequest
+         * @description Create billing portal session request.
+         */
+        BillingPortalRequest: {
+            /**
+             * Return Url
+             * Format: uri
+             */
+            return_url: string;
+        };
+        /**
+         * BillingPortalResponse
+         * @description Stripe billing portal session response payload.
+         */
+        BillingPortalResponse: {
+            /** Url */
+            url: string;
+        };
+        /**
+         * BillingStatusResponse
+         * @description Current user Stripe billing state.
+         */
+        BillingStatusResponse: {
+            /** Stripe Customer Id */
+            stripe_customer_id: string | null;
+            /** Stripe Subscription Id */
+            stripe_subscription_id: string | null;
+            /** Stripe Price Id */
+            stripe_price_id: string | null;
+            /** Subscription Plan */
+            subscription_plan: ("starter" | "growth" | "agency") | null;
+            /** Subscription Interval */
+            subscription_interval: ("monthly" | "yearly") | null;
+            /** Subscription Status */
+            subscription_status: string | null;
+            /** Subscription Current Period End */
+            subscription_current_period_end: string | null;
+            /** Subscription Trial Ends At */
+            subscription_trial_ends_at: string | null;
+        };
+        /**
+         * BillingUsageResponse
+         * @description Current usage counters for dashboard progress bars.
+         */
+        BillingUsageResponse: {
+            /** Plan */
+            plan: ("starter" | "growth" | "agency") | null;
+            /**
+             * Window Kind
+             * @enum {string}
+             */
+            window_kind: "monthly" | "lifetime";
+            /** Period Start */
+            period_start: string | null;
+            /** Period End */
+            period_end: string | null;
+            /** Article Limit */
+            article_limit: number;
+            /** Used Articles */
+            used_articles: number;
+            /** Remaining Articles */
+            remaining_articles: number;
+            /** Usage Percent */
+            usage_percent: number;
+        };
+        /**
          * BrandAssetIngestRequest
          * @description Manual URL-based asset ingestion request.
          */
@@ -919,6 +1105,10 @@ export interface components {
             width?: number | null;
             /** Height */
             height?: number | null;
+            /** Dominant Colors */
+            dominant_colors?: string[];
+            /** Average Luminance */
+            average_luminance?: number | null;
             /** Role */
             role: string;
             /** Role Confidence */
@@ -1033,6 +1223,42 @@ export interface components {
             visual_prompt_contract?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * CheckoutSessionRequest
+         * @description Create Stripe checkout session request payload.
+         */
+        CheckoutSessionRequest: {
+            /**
+             * Plan
+             * @enum {string}
+             */
+            plan: "starter" | "growth" | "agency";
+            /**
+             * Interval
+             * @enum {string}
+             */
+            interval: "monthly" | "yearly";
+            /**
+             * Success Url
+             * Format: uri
+             */
+            success_url: string;
+            /**
+             * Cancel Url
+             * Format: uri
+             */
+            cancel_url: string;
+        };
+        /**
+         * CheckoutSessionResponse
+         * @description Stripe checkout session response payload.
+         */
+        CheckoutSessionResponse: {
+            /** Id */
+            id: string;
+            /** Url */
+            url: string;
         };
         /**
          * ContentArticleDetailResponse
@@ -1552,6 +1778,18 @@ export interface components {
              * @default true
              */
             auto_dispatch_content_tasks: boolean;
+            /**
+             * Auto Resume On Exhaustion
+             * @description When max_iterations is reached without enough accepted topics, pause and auto-resume discovery after a cooldown.
+             * @default false
+             */
+            auto_resume_on_exhaustion: boolean;
+            /**
+             * Exhaustion Cooldown Minutes
+             * @description Cooldown delay before auto-resuming discovery after max_iterations exhaustion.
+             * @default 60
+             */
+            exhaustion_cooldown_minutes: number;
         };
         /**
          * DiscoveryTopicSnapshotResponse
@@ -1957,6 +2195,8 @@ export interface components {
          *       },
          *       "discovery": {
          *         "auto_dispatch_content_tasks": true,
+         *         "auto_resume_on_exhaustion": true,
+         *         "exhaustion_cooldown_minutes": 60,
          *         "max_iterations": 3,
          *         "max_keyword_difficulty": 65,
          *         "max_serp_competitor_density": 0.7,
@@ -2012,6 +2252,32 @@ export interface components {
             discovery?: components["schemas"]["DiscoveryLoopConfig"] | null;
             /** @description Optional content controls (used when mode=content). */
             content?: components["schemas"]["ContentPipelineConfig"] | null;
+        };
+        /**
+         * PlanPriceOptionResponse
+         * @description Single plan interval option resolved from Stripe.
+         */
+        PlanPriceOptionResponse: {
+            /**
+             * Plan
+             * @enum {string}
+             */
+            plan: "starter" | "growth" | "agency";
+            /**
+             * Interval
+             * @enum {string}
+             */
+            interval: "monthly" | "yearly";
+            /** Price Id */
+            price_id: string;
+            /** Amount Cents */
+            amount_cents: number;
+            /** Currency */
+            currency: string;
+            /** Product Name */
+            product_name: string | null;
+            /** Nickname */
+            nickname: string | null;
         };
         /**
          * ProjectConstraints
@@ -2200,6 +2466,8 @@ export interface components {
             } | null;
             /** Notification Webhook */
             notification_webhook?: string | null;
+            /** Notification Webhook Secret */
+            notification_webhook_secret?: string | null;
             /**
              * Auto Continue On Error
              * @default false
@@ -2260,6 +2528,16 @@ export interface components {
             completed_at: string | null;
             /** Error Message */
             error_message: string | null;
+        };
+        /**
+         * StripeWebhookResponse
+         * @description Webhook ack response.
+         */
+        StripeWebhookResponse: {
+            /** Received */
+            received: boolean;
+            /** Event Type */
+            event_type?: string | null;
         };
         /**
          * TaskStatusResponse
@@ -2378,16 +2656,46 @@ export interface components {
             priority_rank: number | null;
             /** Priority Score */
             priority_score: number | null;
+            /** Deterministic Priority Score */
+            deterministic_priority_score: number | null;
+            /** Final Priority Score */
+            final_priority_score: number | null;
+            /** Dynamic Fit Score */
+            dynamic_fit_score: number | null;
+            /** Dynamic Opportunity Score */
+            dynamic_opportunity_score: number | null;
             /** Expected Role */
             expected_role: string | null;
             /** Fit Score */
             fit_score: number | null;
+            /** Brand Fit Score */
+            brand_fit_score: number | null;
+            /** Opportunity Score */
+            opportunity_score: number | null;
             /** Fit Tier */
             fit_tier: string | null;
-            /** Fit Reasons */
-            fit_reasons: string[] | null;
-            /** Fit Threshold Used */
-            fit_threshold_used: number | null;
+            /** Fit Threshold Primary */
+            fit_threshold_primary: number | null;
+            /** Fit Threshold Secondary */
+            fit_threshold_secondary: number | null;
+            /** Llm Rerank Delta */
+            llm_rerank_delta: number | null;
+            /** Llm Fit Adjustment */
+            llm_fit_adjustment: number | null;
+            /** Llm Tier Recommendation */
+            llm_tier_recommendation: string | null;
+            /** Hard Exclusion Reason */
+            hard_exclusion_reason: string | null;
+            /** Final Cut Reason Code */
+            final_cut_reason_code: string | null;
+            /** Serp Intent Confidence */
+            serp_intent_confidence: number | null;
+            /** Serp Evidence Keyword Id */
+            serp_evidence_keyword_id: string | null;
+            /** Serp Evidence Source */
+            serp_evidence_source: string | null;
+            /** Serp Evidence Keyword Count */
+            serp_evidence_keyword_count: number | null;
             /**
              * Created At
              * Format: date-time
@@ -2398,8 +2706,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-            /** Priority Factors */
-            priority_factors: {
+            /** Prioritization Diagnostics */
+            prioritization_diagnostics: {
                 [key: string]: unknown;
             } | null;
             /** Recommended Url Type */
@@ -2502,16 +2810,46 @@ export interface components {
             priority_rank: number | null;
             /** Priority Score */
             priority_score: number | null;
+            /** Deterministic Priority Score */
+            deterministic_priority_score: number | null;
+            /** Final Priority Score */
+            final_priority_score: number | null;
+            /** Dynamic Fit Score */
+            dynamic_fit_score: number | null;
+            /** Dynamic Opportunity Score */
+            dynamic_opportunity_score: number | null;
             /** Expected Role */
             expected_role: string | null;
             /** Fit Score */
             fit_score: number | null;
+            /** Brand Fit Score */
+            brand_fit_score: number | null;
+            /** Opportunity Score */
+            opportunity_score: number | null;
             /** Fit Tier */
             fit_tier: string | null;
-            /** Fit Reasons */
-            fit_reasons: string[] | null;
-            /** Fit Threshold Used */
-            fit_threshold_used: number | null;
+            /** Fit Threshold Primary */
+            fit_threshold_primary: number | null;
+            /** Fit Threshold Secondary */
+            fit_threshold_secondary: number | null;
+            /** Llm Rerank Delta */
+            llm_rerank_delta: number | null;
+            /** Llm Fit Adjustment */
+            llm_fit_adjustment: number | null;
+            /** Llm Tier Recommendation */
+            llm_tier_recommendation: string | null;
+            /** Hard Exclusion Reason */
+            hard_exclusion_reason: string | null;
+            /** Final Cut Reason Code */
+            final_cut_reason_code: string | null;
+            /** Serp Intent Confidence */
+            serp_intent_confidence: number | null;
+            /** Serp Evidence Keyword Id */
+            serp_evidence_keyword_id: string | null;
+            /** Serp Evidence Source */
+            serp_evidence_source: string | null;
+            /** Serp Evidence Keyword Count */
+            serp_evidence_keyword_count: number | null;
             /**
              * Created At
              * Format: date-time
@@ -2884,6 +3222,152 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_billing_plans_api_v1_billing_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingPlansResponse"];
+                };
+            };
+        };
+    };
+    get_my_billing_status_api_v1_billing_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingStatusResponse"];
+                };
+            };
+        };
+    };
+    get_my_usage_api_v1_billing_usage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingUsageResponse"];
+                };
+            };
+        };
+    };
+    create_checkout_session_api_v1_billing_checkout_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutSessionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_billing_portal_session_api_v1_billing_portal_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillingPortalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillingPortalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stripe_webhook_api_v1_billing_webhooks_stripe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StripeWebhookResponse"];
                 };
             };
         };

@@ -83,7 +83,7 @@ const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: st
     value: "revenue_content",
     title: "Revenue Content",
     description:
-      "Focus on money-page keywords — alternatives, pricing, use cases. Drive revenue through high-intent commercial content.",
+      "Focus on money-page keywords: alternatives, pricing, use cases. Drive revenue through high-intent commercial content.",
   },
 ];
 
@@ -577,7 +577,7 @@ export default function ProjectSetupRoute() {
   const [preset, setPreset] = useState<SetupPreset>("traffic_growth");
 
   const onboarding = useOnboarding();
-  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  const [welcomeStep, setWelcomeStep] = useState<"intro" | "focus" | "done">("intro");
   const [strategyDismissed, setStrategyDismissed] = useState(false);
   const [setupDismissed, setSetupDismissed] = useState(false);
 
@@ -590,8 +590,22 @@ export default function ProjectSetupRoute() {
 
   const task = taskFetcher.data?.task ?? null;
   const taskStatus = String(task?.status ?? "").toLowerCase();
+  const taskCurrentStep = typeof task?.current_step === "number" ? task.current_step : null;
+  const taskCompletedSteps = typeof task?.completed_steps === "number" ? task.completed_steps : 0;
+  const taskTotalSteps = typeof task?.total_steps === "number" && task.total_steps > 0 ? task.total_steps : null;
+  const taskDisplayStep =
+    taskCurrentStep ??
+    (taskCompletedSteps > 0
+      ? taskCompletedSteps
+      : taskTotalSteps
+        ? 1
+        : null);
+  const taskProgress = typeof task?.progress_percent === "number"
+    ? task.progress_percent
+    : taskTotalSteps
+      ? (taskCompletedSteps / taskTotalSteps) * 100
+      : 0;
   const taskCurrentStepName = task?.current_step_name ?? null;
-  const taskProgress = task?.progress_percent ?? 0;
   const taskError = taskFetcher.data?.error ?? null;
 
   const isTaskCompleted = taskStatus === "completed";
@@ -602,7 +616,6 @@ export default function ProjectSetupRoute() {
   const brandPollAttemptsRef = useRef(0);
 
   const brand = brandFetcher.data?.brand ?? null;
-  const brandError = brandFetcher.data?.error ?? null;
   const companyName = brand?.company_name?.trim() || null;
   const icp = getBrandContextValue(brand, [
     "icp",
@@ -650,10 +663,10 @@ export default function ProjectSetupRoute() {
 
   useEffect(() => {
     brandPollAttemptsRef.current = 0;
-  }, [projectId, step]);
+  }, [projectId, setupTaskId]);
 
   useEffect(() => {
-    if (step !== 3 || !setupTaskId) return;
+    if (step < 2 || !setupTaskId) return;
     let intervalId: number | null = null;
 
     const poll = () => {
@@ -679,8 +692,21 @@ export default function ProjectSetupRoute() {
     };
   }, [setupTaskId, step]);
 
+  const prevCompletedStepsRef = useRef(taskCompletedSteps);
   useEffect(() => {
-    if (step !== 3 || !projectId || !isTaskCompleted) return;
+    if (step < 2 || !projectId) return;
+    if (brandFetcher.state !== "idle") return;
+
+    const prevSteps = prevCompletedStepsRef.current;
+    prevCompletedStepsRef.current = taskCompletedSteps;
+
+    if (taskCompletedSteps > prevSteps) {
+      brandFetcher.load(`/projects/${projectId}/brand-visual-context?ts=${Date.now()}`);
+    }
+  }, [brandFetcher, brandFetcher.state, projectId, step, taskCompletedSteps]);
+
+  useEffect(() => {
+    if (step < 2 || !projectId || !isTaskCompleted) return;
     if (brand && hasBrandContextInsights) return;
     let intervalId: number | null = null;
 
@@ -727,6 +753,13 @@ export default function ProjectSetupRoute() {
     }
   }, [step]);
 
+  // Re-show the setup bubble when the task completes
+  useEffect(() => {
+    if (isTaskCompleted && onboarding.isPhase("setup_progress")) {
+      setSetupDismissed(false);
+    }
+  }, [isTaskCompleted]);
+
   function handleDomainChange(value: string) {
     const sanitized = sanitizeDomainInput(value);
     setDomain(sanitized);
@@ -739,14 +772,14 @@ export default function ProjectSetupRoute() {
   const stepLabels = ["Basic project info", "Strategy + SEO inputs", "Setup progress"];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-onboarding-focus="page-content">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2f6f71]">Guided Setup</p>
           <h1 className="font-display text-3xl font-bold text-slate-900">Create a new pipeline project</h1>
         </div>
-        <Link to="/projects" className="text-sm font-semibold text-slate-600 hover:text-slate-900">
-          Back to projects
+        <Link to="/project" className="text-sm font-semibold text-slate-600 hover:text-slate-900">
+          Back to project
         </Link>
       </div>
 
@@ -795,7 +828,7 @@ export default function ProjectSetupRoute() {
             <Card>
               <CardHeader>
                 <CardTitle>Basic project info</CardTitle>
-                <CardDescription>Create the project immediately and kick off setup step 0 + step 1 in the background.</CardDescription>
+                <CardDescription>Create the project and kick off setup steps 1 to 5 in the background.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-1.5 text-sm md:col-span-2">
@@ -858,16 +891,43 @@ export default function ProjectSetupRoute() {
             </div>
           </Form>
 
-          {onboarding.isPhase("welcome") && !welcomeDismissed && (
+          {onboarding.isPhase("welcome") && welcomeStep === "intro" && (
             <OnboardingOverlay
-              onNext={() => setWelcomeDismissed(true)}
+              onNext={() => setWelcomeStep("focus")}
               nextLabel="Let's go!"
             >
-              <DonkeyBubble>
-                <p className="font-display text-lg font-bold text-slate-900">Welcome to Donkey SEO!</p>
+              <DonkeyBubble title="Welcome to Donkey SEO!">
                 <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  First, enter your website domain. I'll use it to figure out what kind of company you have,
-                  so I can optimize keyword research just for you.
+                  I'm your professional<strong className="text-slate-800"> SEO assistant</strong>. I'll help you:
+                </p>
+                <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-600">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 text-[#2f6f71]">&#x2713;</span>
+                    <span>Rank higher on <strong className="text-slate-800">Google search results</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 text-[#2f6f71]">&#x2713;</span>
+                    <span>Get featured in <strong className="text-slate-800">Google's AI Overview</strong></span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 text-[#2f6f71]">&#x2713;</span>
+                    <span>All on <strong className="text-slate-800">autopilot</strong>; minimal effort on your end</span>
+                  </li>
+                </ul>
+              </DonkeyBubble>
+            </OnboardingOverlay>
+          )}
+
+          {onboarding.isPhase("welcome") && welcomeStep === "focus" && (
+            <OnboardingOverlay
+              onNext={() => setWelcomeStep("done")}
+              nextLabel="Got it!"
+              focusSelector='[data-onboarding-focus="page-content"]'
+            >
+              <DonkeyBubble title="Let's set up your first project">
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Enter your <strong className="text-slate-800">website domain</strong> and I'll analyze your site to build a tailored SEO strategy.
+                  The <strong className="text-slate-800">project name</strong> is auto-suggested from your domain.
                 </p>
               </DonkeyBubble>
             </OnboardingOverlay>
@@ -947,11 +1007,26 @@ export default function ProjectSetupRoute() {
               onNext={() => setStrategyDismissed(true)}
               nextLabel="Got it!"
             >
-              <DonkeyBubble>
-                <p className="font-display text-lg font-bold text-slate-900">Pick your strategy</p>
+              <DonkeyBubble title="Pick your strategy">
                 <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Choose a content strategy that matches your business goals. This tells me which keywords
-                  to prioritize during topic discovery. Then select your target country below.
+                  Choose a <strong className="text-slate-800">content strategy</strong> that matches your business goals:
+                </p>
+                <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-600">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 text-[#2f6f71]">&#x2022;</span>
+                    <span><strong className="text-slate-800">Traffic Growth</strong>: maximize organic visibility</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 text-[#2f6f71]">&#x2022;</span>
+                    <span><strong className="text-slate-800">Lead Generation</strong>: target buyer-intent queries</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-0.5 text-[#2f6f71]">&#x2022;</span>
+                    <span><strong className="text-slate-800">Revenue Content</strong>: focus on money-page keywords</span>
+                  </li>
+                </ul>
+                <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                  Then select your <strong className="text-slate-800">target country</strong> below so I know which search market to optimize for.
                 </p>
               </DonkeyBubble>
             </OnboardingOverlay>
@@ -983,11 +1058,16 @@ export default function ProjectSetupRoute() {
                       ? "Setup complete. Loading brand profile data."
                       : "Analyzing your domain and extracting brand profile context."}
                 </p>
+                {taskTotalSteps ? (
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {task?.stage ? `${formatStatusLabel(task.stage)} · ` : ""}Step {taskDisplayStep ?? 1} of {taskTotalSteps}
+                  </p>
+                ) : null}
                 <div className="mt-4">
                   <Progress value={Math.max(0, Math.min(100, Math.round(taskProgress ?? 0)))} />
                 </div>
                 <p className="mt-2 text-right text-xs font-semibold text-[#1e5052]">
-                  {task?.progress_percent === null || task?.progress_percent === undefined
+                  {typeof taskProgress !== "number" || Number.isNaN(taskProgress)
                     ? "Working..."
                     : `${Math.round(taskProgress)}%`}
                 </p>
@@ -1141,7 +1221,6 @@ export default function ProjectSetupRoute() {
                 </Card>
               ) : null}
 
-              {brandError ? <p className="text-sm font-semibold text-rose-700">{brandError}</p> : null}
             </CardContent>
           </Card>
 
@@ -1167,22 +1246,37 @@ export default function ProjectSetupRoute() {
               onNext={() => setSetupDismissed(true)}
               nextLabel="Got it!"
             >
-              <DonkeyBubble>
+              <DonkeyBubble title={isTaskCompleted ? "Your brand profile is ready!" : "Analyzing your site..."}>
                 {isTaskCompleted ? (
                   <>
-                    <p className="font-display text-lg font-bold text-slate-900">Your brand profile is ready!</p>
                     <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                      I've extracted your company details, differentiators, and target audience.
-                      This data will power your SEO keyword research. Click "Start Topic Discovery"
-                      to kick off the first research loop!
+                      I've extracted everything I need from your website:
+                    </p>
+                    <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-600">
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5 text-emerald-600">&#x2713;</span>
+                        <span><strong className="text-slate-800">Company details</strong> and brand identity</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5 text-emerald-600">&#x2713;</span>
+                        <span><strong className="text-slate-800">Differentiators</strong> and unique selling points</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="mt-0.5 text-emerald-600">&#x2713;</span>
+                        <span><strong className="text-slate-800">Target audience</strong> and ICP niches</span>
+                      </li>
+                    </ul>
+                    <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                      Hit <strong className="text-slate-800">"Start Topic Discovery"</strong> to kick off your first research loop!
                     </p>
                   </>
                 ) : (
                   <>
-                    <p className="font-display text-lg font-bold text-slate-900">Hang tight!</p>
                     <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                      I'm analyzing your website to extract brand profile data. This shouldn't take
-                      long — maybe grab a coffee while I work my magic.
+                      I'm crawling your website to build a <strong className="text-slate-800">brand profile</strong>. This powers everything: from keyword research to content generation.
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                      This usually takes about a minute. Feel free to watch the progress below!
                     </p>
                   </>
                 )}

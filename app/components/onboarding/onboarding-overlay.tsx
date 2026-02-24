@@ -6,12 +6,15 @@ type OnboardingOverlayProps = {
   children: ReactNode;
   onNext?: () => void;
   nextLabel?: string;
+  /** CSS selector of an element to visually spotlight behind the overlay */
+  focusSelector?: string;
 };
 
 export function OnboardingOverlay({
   children,
   onNext,
   nextLabel = "Got it!",
+  focusSelector,
 }: OnboardingOverlayProps) {
   const [mounted, setMounted] = useState(false);
 
@@ -19,6 +22,29 @@ export function OnboardingOverlay({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Highlight the focused element above the backdrop
+  useEffect(() => {
+    if (!focusSelector) return;
+    const el = document.querySelector<HTMLElement>(focusSelector);
+    if (!el) return;
+
+    const prev = {
+      position: el.style.position,
+      zIndex: el.style.zIndex,
+      borderRadius: el.style.borderRadius,
+    };
+
+    el.style.position = "relative";
+    el.style.zIndex = "61";
+    el.style.borderRadius = "1rem";
+
+    return () => {
+      el.style.position = prev.position;
+      el.style.zIndex = prev.zIndex;
+      el.style.borderRadius = prev.borderRadius;
+    };
+  }, [focusSelector]);
 
   if (!mounted) return null;
 
@@ -35,7 +61,7 @@ export function OnboardingOverlay({
           initial={{ opacity: 0, y: 12, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.35, delay: 0.1 }}
-          className="w-full max-w-lg"
+          className={`w-full max-w-lg ${focusSelector ? "z-[62]" : ""}`}
         >
           {children}
 

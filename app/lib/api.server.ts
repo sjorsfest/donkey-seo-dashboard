@@ -111,6 +111,21 @@ export class ApiClient {
     return user;
   }
 
+  async getSessionValue(key: string): Promise<unknown> {
+    const session = await this.getSession();
+    return session.get(key);
+  }
+
+  async setSessionValue(key: string, value: unknown): Promise<void> {
+    const session = await this.getSession();
+    session.set(key, value);
+  }
+
+  async unsetSessionValue(key: string): Promise<void> {
+    const session = await this.getSession();
+    session.unset(key);
+  }
+
   async commit() {
     const session = await this.getSession();
     return {

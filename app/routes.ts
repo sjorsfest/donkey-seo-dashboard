@@ -8,7 +8,8 @@ export default [
     route("auth/callback", "routes/auth.callback.tsx"),
   ]),
   layout("routes/_dashboard.tsx", [
-    route("configuration", "routes/_dashboard.configuration.tsx"),
+    route("billing", "routes/_dashboard.billing.tsx"),
+    route("project", "routes/_dashboard.project.tsx"),
     route("projects/new", "routes/_dashboard.projects.new.tsx"),
     route("projects/setup-task/:taskId", "routes/_dashboard.projects.setup-task.$taskId.tsx"),
     route(

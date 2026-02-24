@@ -309,8 +309,8 @@ export default function ProjectCreationHubRoute() {
             <Link to={`/projects/${project.id}/discovery`}>
               <Button variant="outline">Discovery phase</Button>
             </Link>
-            <Link to="/projects">
-              <Button variant="outline">Back to projects</Button>
+            <Link to="/project">
+              <Button variant="outline">Back to project</Button>
             </Link>
             <Button variant="secondary" onClick={() => revalidator.revalidate()}>
               Refresh

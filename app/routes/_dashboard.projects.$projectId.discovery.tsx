@@ -4,10 +4,13 @@ import { Search, Layers, RefreshCw } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.discovery";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { Progress } from "~/components/ui/progress";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
+  calculateOverallProgress,
   formatDateTime,
+  formatStepName,
   formatStatusLabel,
   getStatusBadgeClass,
   isAcceptedDecision,
@@ -416,6 +419,9 @@ export default function ProjectDiscoveryHubRoute() {
   }, [project.id, latestRun?.id, effectiveStatus]);
 
   const currentStepNumber = liveProgress?.current_step ?? null;
+  const overallProgress = Math.round(
+    liveProgress?.overall_progress ?? calculateOverallProgress(liveProgress?.steps ?? latestRun?.step_executions ?? [])
+  );
 
   return (
     <div className="space-y-6">
@@ -432,8 +438,8 @@ export default function ProjectDiscoveryHubRoute() {
             <Link to={`/projects/${project.id}/creation`}>
               <Button variant="outline">Creation phase</Button>
             </Link>
-            <Link to="/projects">
-              <Button variant="outline">Back to projects</Button>
+            <Link to="/project">
+              <Button variant="outline">Back to project</Button>
             </Link>
             <Button variant="secondary" onClick={() => revalidator.revalidate()}>
               Refresh
@@ -489,6 +495,14 @@ export default function ProjectDiscoveryHubRoute() {
                     Resume
                   </Button>
                 </Form>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-1">
+              <Progress value={overallProgress} />
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <p>{overallProgress}% · {formatStepName(liveProgress?.current_step_name)}</p>
+                <p>{formatDateTime(latestRun.started_at ?? latestRun.created_at)}</p>
               </div>
             </div>
           </CardContent>

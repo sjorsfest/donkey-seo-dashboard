@@ -4,9 +4,10 @@ import { cn } from "~/lib/utils";
 type DonkeyBubbleProps = {
   children: ReactNode;
   className?: string;
+  title?: string;
 };
 
-export function DonkeyBubble({ children, className }: DonkeyBubbleProps) {
+export function DonkeyBubble({ children, className, title }: DonkeyBubbleProps) {
   return (
     <div className={cn("flex items-start gap-4", className)}>
       <img
@@ -17,7 +18,14 @@ export function DonkeyBubble({ children, className }: DonkeyBubbleProps) {
       <div className="relative rounded-2xl border-2 border-black bg-white p-5 shadow-[4px_4px_0_#1a1a1a]">
         {/* triangle pointer toward donkey */}
         <div className="absolute -left-2.5 top-6 h-4 w-4 rotate-45 border-b-2 border-l-2 border-black bg-white" />
-        <div className="relative">{children}</div>
+        <div className="relative">
+          {title ? (
+            <p className="font-display text-lg font-bold text-slate-900">
+              {title}
+            </p>
+          ) : null}
+          {children}
+        </div>
       </div>
     </div>
   );
