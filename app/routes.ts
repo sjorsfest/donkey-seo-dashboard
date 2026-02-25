@@ -9,6 +9,7 @@ export default [
   ]),
   layout("routes/_dashboard.tsx", [
     route("billing", "routes/_dashboard.billing.tsx"),
+    route("settings", "routes/_dashboard.settings.tsx"),
     route("project", "routes/_dashboard.project.tsx"),
     route("projects/new", "routes/_dashboard.projects.new.tsx"),
     route("projects/setup-task/:taskId", "routes/_dashboard.projects.setup-task.$taskId.tsx"),

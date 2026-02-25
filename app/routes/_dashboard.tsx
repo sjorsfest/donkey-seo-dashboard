@@ -13,6 +13,7 @@ import {
   ArrowLeftRight,
   CalendarDays,
   Compass,
+  CreditCard,
   FolderKanban,
   LogOut,
   PenSquare,
@@ -265,10 +266,18 @@ const navItems: NavItem[] = [
   {
     id: "billing",
     label: "Billing",
-    icon: Settings2,
+    icon: CreditCard,
     colorClass: "text-sky-600",
     path: "/billing",
     isActive: (pathname) => pathname.startsWith("/billing"),
+  },
+  {
+    id: "settings",
+    label: "Settings",
+    icon: Settings2,
+    colorClass: "text-cyan-600",
+    path: "/settings",
+    isActive: (pathname) => pathname.startsWith("/settings"),
   },
 ];
 

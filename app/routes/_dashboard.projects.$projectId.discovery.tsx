@@ -306,23 +306,42 @@ const SUCCESS_STEP = new Set(["completed", "success", "succeeded", "done"]);
 
 function getStepState(
   step: (typeof DISCOVERY_STEPS)[number],
-  currentStep: number | null,
+  currentStepName: string | null,
   executions: StepExecution[],
   isActive: boolean,
 ): "completed" | "running" | "idle" {
   const exec = executions.find((e) => e.step_number === step.number);
+
+  // Check if this step is currently running based on the step name
+  if (isActive && currentStepName && step.label.toLowerCase() === currentStepName.toLowerCase()) {
+    return "running";
+  }
+
+  // If the pipeline is active and we have a current step, mark steps after it as idle
+  if (isActive && currentStepName) {
+    const currentStepIndex = DISCOVERY_STEPS.findIndex(
+      (s) => s.label.toLowerCase() === currentStepName.toLowerCase()
+    );
+    const thisStepIndex = DISCOVERY_STEPS.findIndex((s) => s.number === step.number);
+
+    // If this step comes after the current running step, it should be idle (not yet reached in this iteration)
+    if (currentStepIndex !== -1 && thisStepIndex > currentStepIndex) {
+      return "idle";
+    }
+  }
+
+  // Check if the step is completed
   if (exec && SUCCESS_STEP.has(exec.status.toLowerCase())) return "completed";
-  if (currentStep === step.number && isActive) return "running";
-  if (exec && exec.status.toLowerCase() === "running") return "running";
+
   return "idle";
 }
 
 function DiscoveryStepTimeline({
-  currentStep,
+  currentStepName,
   steps,
   isActive,
 }: {
-  currentStep: number | null;
+  currentStepName: string | null;
   steps: StepExecution[];
   isActive: boolean;
 }) {
@@ -330,7 +349,7 @@ function DiscoveryStepTimeline({
     <div className="py-2">
       <div className="flex items-center">
         {DISCOVERY_STEPS.map((step, i) => {
-          const state = getStepState(step, currentStep, steps, isActive);
+          const state = getStepState(step, currentStepName, steps, isActive);
           return (
             <div key={step.number} className="flex items-center" style={{ flex: i < DISCOVERY_STEPS.length - 1 ? 1 : undefined }}>
               {/* Node */}
@@ -418,7 +437,6 @@ export default function ProjectDiscoveryHubRoute() {
     };
   }, [project.id, latestRun?.id, effectiveStatus]);
 
-  const currentStepNumber = liveProgress?.current_step ?? null;
   const overallProgress = Math.round(
     liveProgress?.overall_progress ?? calculateOverallProgress(liveProgress?.steps ?? latestRun?.step_executions ?? [])
   );
@@ -470,7 +488,7 @@ export default function ProjectDiscoveryHubRoute() {
                 <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
                   <p>
                     Current step:{" "}
-                    {currentStepNumber ? DISCOVERY_STEPS.find((s) => s.number === currentStepNumber)?.label ?? "Unknown" : "N/A"}
+                    {liveProgress?.current_step_name ?? "N/A"}
                   </p>
                   <p>Started: {formatDateTime(latestRun.started_at ?? latestRun.created_at)}</p>
                 </div>
@@ -609,7 +627,7 @@ export default function ProjectDiscoveryHubRoute() {
             <div className="space-y-2">
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Discovery Pipeline Progress</p>
               <DiscoveryStepTimeline
-                currentStep={currentStepNumber}
+                currentStepName={liveProgress?.current_step_name ?? null}
                 steps={liveProgress?.steps ?? latestRun?.step_executions ?? []}
                 isActive={isRunActive(effectiveStatus)}
               />

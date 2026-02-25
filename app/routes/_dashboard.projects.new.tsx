@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
+import { Globe, Linkedin, Twitter, Upload } from "lucide-react";
 import { Form, Link, data, redirect, useActionData, useFetcher, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/_dashboard.projects.new";
 import { Button } from "~/components/ui/button";
@@ -36,7 +37,7 @@ type TaskStatusResponse = components["schemas"]["TaskStatusResponse"];
 type BrandVisualContextResponse = components["schemas"]["BrandVisualContextResponse"];
 
 type LoaderData = {
-  step: 1 | 2 | 3;
+  step: 1 | 2 | 3 | 4;
   projectId: string | null;
   setupRunId: string | null;
   setupTaskId: string | null;
@@ -53,7 +54,27 @@ type ActionData = {
   fieldErrors?: {
     domain?: string;
     name?: string;
+    authors?: string;
   };
+};
+
+type AuthorDraft = {
+  id: string;
+  name: string;
+  bio: string;
+  website_url: string;
+  linkedin_url: string;
+  twitter_url: string;
+  profile_image_source_url: string;
+};
+
+type SubmittedOnboardingAuthor = {
+  name: string;
+  bio: string | null;
+  website_url: string | null;
+  linkedin_url: string | null;
+  twitter_url: string | null;
+  profile_image_source_url: string | null;
 };
 
 type TaskStatusLoaderData = {
@@ -90,9 +111,10 @@ const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: st
 const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "error", "paused", "cancelled"]);
 const FAILURE_LIKE_TASK_STATUSES = new Set(["failed", "error", "paused", "cancelled"]);
 
-function parseStep(value: string | null): 1 | 2 | 3 {
+function parseStep(value: string | null): 1 | 2 | 3 | 4 {
   if (value === "2") return 2;
   if (value === "3") return 3;
+  if (value === "4") return 4;
   return 1;
 }
 
@@ -100,6 +122,117 @@ function parseSetupPreset(value: string): SetupPreset {
   if (value === "lead_generation" || value === "lead_gen") return "lead_generation";
   if (value === "revenue_content") return value;
   return "traffic_growth";
+}
+
+function createEmptyAuthorDraft(id: string): AuthorDraft {
+  return {
+    id,
+    name: "",
+    bio: "",
+    website_url: "",
+    linkedin_url: "",
+    twitter_url: "",
+    profile_image_source_url: "",
+  };
+}
+
+function hasAuthorDraftContent(author: AuthorDraft): boolean {
+  return [
+    author.name,
+    author.bio,
+    author.website_url,
+    author.linkedin_url,
+    author.twitter_url,
+    author.profile_image_source_url,
+  ].some((value) => value.trim().length > 0);
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeOptionalUrl(value: unknown): string | null {
+  const raw = normalizeOptionalString(value);
+  if (!raw) return null;
+
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(withProtocol);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function parseOnboardingAuthors(rawAuthors: string): { authors: SubmittedOnboardingAuthor[]; error: string | null } {
+  let parsed: unknown = [];
+
+  try {
+    parsed = JSON.parse(rawAuthors);
+  } catch {
+    return { authors: [], error: "Invalid authors payload." };
+  }
+
+  if (!Array.isArray(parsed)) {
+    return { authors: [], error: "Invalid authors payload." };
+  }
+
+  const authors: SubmittedOnboardingAuthor[] = [];
+  const seenNames = new Set<string>();
+
+  for (const [index, value] of parsed.entries()) {
+    if (!value || typeof value !== "object") continue;
+
+    const record = value as Record<string, unknown>;
+    const bio = normalizeOptionalString(record.bio);
+    const rawWebsiteUrl = normalizeOptionalString(record.website_url) ?? normalizeOptionalString(record.blog_url);
+    const rawLinkedinUrl = normalizeOptionalString(record.linkedin_url);
+    const rawTwitterUrl = normalizeOptionalString(record.twitter_url) ?? normalizeOptionalString(record.x_url);
+    const rawProfileImageSourceUrl = normalizeOptionalString(record.profile_image_source_url);
+    const name = normalizeOptionalString(record.name);
+    if (!name) {
+      if (bio || rawWebsiteUrl || rawLinkedinUrl || rawTwitterUrl || rawProfileImageSourceUrl) {
+        return { authors: [], error: `Author ${index + 1}: name is required when other details are provided.` };
+      }
+      continue;
+    }
+
+    const dedupeKey = name.toLowerCase();
+    if (seenNames.has(dedupeKey)) continue;
+    seenNames.add(dedupeKey);
+
+    const websiteUrl = rawWebsiteUrl ? normalizeOptionalUrl(rawWebsiteUrl) : null;
+    const linkedinUrl = rawLinkedinUrl ? normalizeOptionalUrl(rawLinkedinUrl) : null;
+    const twitterUrl = rawTwitterUrl ? normalizeOptionalUrl(rawTwitterUrl) : null;
+    const profileImageSourceUrl = rawProfileImageSourceUrl ? normalizeOptionalUrl(rawProfileImageSourceUrl) : null;
+
+    if (rawWebsiteUrl && !websiteUrl) {
+      return { authors: [], error: `Author ${index + 1}: blog URL must be a valid URL.` };
+    }
+    if (rawLinkedinUrl && !linkedinUrl) {
+      return { authors: [], error: `Author ${index + 1}: LinkedIn URL must be a valid URL.` };
+    }
+    if (rawTwitterUrl && !twitterUrl) {
+      return { authors: [], error: `Author ${index + 1}: X/Twitter URL must be a valid URL.` };
+    }
+    if (rawProfileImageSourceUrl && !profileImageSourceUrl) {
+      return { authors: [], error: `Author ${index + 1}: profile image URL must be a valid URL.` };
+    }
+
+    authors.push({
+      name,
+      bio,
+      website_url: websiteUrl,
+      linkedin_url: linkedinUrl,
+      twitter_url: twitterUrl,
+      profile_image_source_url: profileImageSourceUrl,
+    });
+  }
+
+  return { authors: authors.slice(0, 8), error: null };
 }
 
 function stringifyUnknownValue(value: unknown): string | null {
@@ -304,7 +437,7 @@ function buildOnboardingUrl({
   setupTaskId,
   prefill,
 }: {
-  step: 1 | 2 | 3;
+  step: 1 | 2 | 3 | 4;
   projectId?: string | null;
   setupRunId?: string | null;
   setupTaskId?: string | null;
@@ -495,6 +628,70 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
+  if (intent === "saveProjectAuthors") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    const setupRunId = String(formData.get("setup_run_id") ?? "").trim();
+    const setupTaskId = String(formData.get("setup_task_id") ?? "").trim();
+    const rawAuthors = String(formData.get("authors_json") ?? "[]");
+
+    if (!projectId || !setupRunId || !setupTaskId) {
+      return data({ error: "Missing onboarding context." } satisfies ActionData, {
+        status: 400,
+        headers: await api.commit(),
+      });
+    }
+
+    const parsedAuthors = parseOnboardingAuthors(rawAuthors);
+    if (parsedAuthors.error) {
+      return data(
+        {
+          error: parsedAuthors.error,
+          fieldErrors: { authors: parsedAuthors.error },
+        } satisfies ActionData,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    for (const author of parsedAuthors.authors) {
+      const payload: Record<string, unknown> = {
+        name: author.name,
+      };
+
+      if (author.bio) payload.bio = author.bio;
+      const socialUrls: Record<string, string> = {};
+      if (author.website_url) socialUrls.website = author.website_url;
+      if (author.linkedin_url) socialUrls.linkedin = author.linkedin_url;
+      if (author.twitter_url) socialUrls.twitter = author.twitter_url;
+      if (Object.keys(socialUrls).length > 0) payload.social_urls = socialUrls;
+      if (author.profile_image_source_url) payload.profile_image_source_url = author.profile_image_source_url;
+
+      const createAuthorResponse = await api.fetch(`/authors/${projectId}`, {
+        method: "POST",
+        json: payload,
+      });
+
+      if (createAuthorResponse.status === 401) return handleUnauthorized(api);
+
+      if (!createAuthorResponse.ok) {
+        const apiMessage = await readApiErrorMessage(createAuthorResponse);
+        return data(
+          { error: apiMessage ?? "Unable to save project authors." } satisfies ActionData,
+          { status: createAuthorResponse.status, headers: await api.commit() }
+        );
+      }
+    }
+
+    return redirect(
+      buildOnboardingUrl({
+        step: 4,
+        projectId,
+        setupRunId,
+        setupTaskId,
+      }),
+      { headers: await api.commit() }
+    );
+  }
+
   if (intent === "startDiscovery") {
     const projectId = String(formData.get("project_id") ?? "").trim();
     const setupRunId = String(formData.get("setup_run_id") ?? "").trim();
@@ -575,10 +772,14 @@ export default function ProjectSetupRoute() {
 
   const [country, setCountry] = useState("worldwide");
   const [preset, setPreset] = useState<SetupPreset>("traffic_growth");
+  const [authors, setAuthors] = useState<AuthorDraft[]>([createEmptyAuthorDraft("author-1")]);
+  const authorImageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [authorImageFileNames, setAuthorImageFileNames] = useState<Record<string, string>>({});
 
   const onboarding = useOnboarding();
   const [welcomeStep, setWelcomeStep] = useState<"intro" | "focus" | "done">("intro");
   const [strategyDismissed, setStrategyDismissed] = useState(false);
+  const [authorsDismissed, setAuthorsDismissed] = useState(false);
   const [setupDismissed, setSetupDismissed] = useState(false);
 
   const derivedLocale = useMemo(() => countryToLocale(country), [country]);
@@ -587,6 +788,20 @@ export default function ProjectSetupRoute() {
   const domainIsValid = isValidDomain(domain);
   const inlineDomainError = domain.length > 0 && !domainIsValid ? "Enter a valid domain (e.g. example.com)." : null;
   const domainError = domainIsValid ? null : actionData?.fieldErrors?.domain ?? inlineDomainError;
+  const authorsPayloadJson = useMemo(() => {
+    const normalizedAuthors = authors
+      .filter((author) => hasAuthorDraftContent(author))
+      .map((author) => ({
+        name: author.name.trim(),
+        bio: author.bio.trim(),
+        website_url: author.website_url.trim(),
+        linkedin_url: author.linkedin_url.trim(),
+        twitter_url: author.twitter_url.trim(),
+        profile_image_source_url: author.profile_image_source_url.trim(),
+      }));
+
+    return JSON.stringify(normalizedAuthors);
+  }, [authors]);
 
   const task = taskFetcher.data?.task ?? null;
   const taskStatus = String(task?.status ?? "").toLowerCase();
@@ -746,10 +961,17 @@ export default function ProjectSetupRoute() {
     if (step === 2 && onboarding.isPhase("welcome")) {
       onboarding.advance({ projectId: projectId ?? undefined });
       setStrategyDismissed(false);
+      setAuthorsDismissed(false);
     }
-    if (step === 3 && onboarding.isPhase("strategy")) {
+    if (step === 4 && onboarding.isPhase("strategy")) {
       onboarding.advance();
       setSetupDismissed(false);
+    }
+  }, [step]);
+
+  useEffect(() => {
+    if (step === 3) {
+      setAuthorsDismissed(false);
     }
   }, [step]);
 
@@ -769,7 +991,38 @@ export default function ProjectSetupRoute() {
     }
   }
 
-  const stepLabels = ["Basic project info", "Strategy + SEO inputs", "Setup progress"];
+  function updateAuthor(
+    authorId: string,
+    field: keyof Omit<AuthorDraft, "id">,
+    value: string
+  ) {
+    setAuthors((previous) =>
+      previous.map((author) =>
+        author.id === authorId
+          ? {
+              ...author,
+              [field]: value,
+            }
+          : author
+      )
+    );
+  }
+
+  function triggerAuthorImagePicker(authorId: string) {
+    authorImageInputRefs.current[authorId]?.click();
+  }
+
+  function handleAuthorImageFileChange(authorId: string, files: FileList | null) {
+    const file = files?.[0] ?? null;
+    if (!file) return;
+
+    setAuthorImageFileNames((previous) => ({
+      ...previous,
+      [authorId]: file.name,
+    }));
+  }
+
+  const stepLabels = ["Basic project info", "Strategy + SEO inputs", "Authors (optional)", "Setup progress"];
 
   return (
     <div className="space-y-6" data-onboarding-focus="page-content">
@@ -785,7 +1038,7 @@ export default function ProjectSetupRoute() {
 
       <Card>
         <CardContent className="pt-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {stepLabels.map((label, index) => {
               const stepNumber = index + 1;
               const active = stepNumber === step;
@@ -828,7 +1081,7 @@ export default function ProjectSetupRoute() {
             <Card>
               <CardHeader>
                 <CardTitle>Basic project info</CardTitle>
-                <CardDescription>Create the project and kick off setup steps 1 to 5 in the background.</CardDescription>
+                <CardDescription>Create the project and initialize onboarding setup in the background.</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <label className="grid gap-1.5 text-sm md:col-span-2">
@@ -1026,7 +1279,7 @@ export default function ProjectSetupRoute() {
                   </li>
                 </ul>
                 <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                  Then select your <strong className="text-slate-800">target country</strong> below so I know which search market to optimize for.
+                  Then select your <strong className="text-slate-800">target country</strong> and add optional author profiles in the next step.
                 </p>
               </DonkeyBubble>
             </OnboardingOverlay>
@@ -1035,7 +1288,161 @@ export default function ProjectSetupRoute() {
       ) : null}
 
       {step === 3 ? (
-        <motion.div key="step3" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+        <motion.div key="step3-authors" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+          <Form method="post" className="space-y-6">
+            <input type="hidden" name="intent" value="saveProjectAuthors" />
+            <input type="hidden" name="project_id" value={projectId ?? ""} />
+            <input type="hidden" name="setup_run_id" value={setupRunId ?? ""} />
+            <input type="hidden" name="setup_task_id" value={setupTaskId ?? ""} />
+            <input type="hidden" name="authors_json" value={authorsPayloadJson} />
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Authors (optional)</CardTitle>
+                <CardDescription>
+                  Adding authors strengthens credibility and E-E-A-T signals. Articles can include consistent bylines, bios, and profile images from day one.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+
+                {authors.map((author, index) => (
+                  <div key={author.id} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-slate-900">Author {index + 1}</p>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="grid gap-1.5 text-sm md:col-span-2">
+                        <span className="font-semibold text-slate-700">Name</span>
+                        <input
+                          type="text"
+                          value={author.name}
+                          onChange={(event) => updateAuthor(author.id, "name", event.target.value)}
+                          placeholder="Jane Doe"
+                          className="h-11 rounded-xl border border-slate-300 px-3 text-sm"
+                        />
+                      </label>
+
+                      <label className="grid gap-1.5 text-sm md:col-span-2">
+                        <span className="font-semibold text-slate-700">Bio</span>
+                        <textarea
+                          value={author.bio}
+                          onChange={(event) => updateAuthor(author.id, "bio", event.target.value)}
+                          placeholder="SEO strategist focused on B2B SaaS growth."
+                          rows={3}
+                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                        />
+                      </label>
+
+                      <div className="grid gap-1.5 text-sm md:col-span-2">
+                        <span className="font-semibold text-slate-700">Profiles & socials</span>
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <label className="relative">
+                            <span className="sr-only">Blog or website URL</span>
+                            <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              value={author.website_url}
+                              onChange={(event) => updateAuthor(author.id, "website_url", event.target.value)}
+                              placeholder="Blog / website"
+                              className="h-11 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-sm"
+                            />
+                          </label>
+
+                          <label className="relative">
+                            <span className="sr-only">LinkedIn URL</span>
+                            <Linkedin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              value={author.linkedin_url}
+                              onChange={(event) => updateAuthor(author.id, "linkedin_url", event.target.value)}
+                              placeholder="LinkedIn"
+                              className="h-11 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-sm"
+                            />
+                          </label>
+
+                          <label className="relative">
+                            <span className="sr-only">X or Twitter URL</span>
+                            <Twitter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                            <input
+                              type="text"
+                              value={author.twitter_url}
+                              onChange={(event) => updateAuthor(author.id, "twitter_url", event.target.value)}
+                              placeholder="X / Twitter"
+                              className="h-11 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-sm"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-1.5 text-sm md:col-span-2">
+                        <span className="font-semibold text-slate-700">Profile image</span>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <input
+                            ref={(node) => {
+                              authorImageInputRefs.current[author.id] = node;
+                            }}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(event) => handleAuthorImageFileChange(author.id, event.target.files)}
+                          />
+                          <Button type="button" variant="outline" onClick={() => triggerAuthorImagePicker(author.id)}>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Upload image
+                          </Button>
+                          <span className="text-xs text-slate-500">{authorImageFileNames[author.id] ?? "No file selected"}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {actionData?.fieldErrors?.authors ? (
+                  <p className="text-sm font-semibold text-rose-700">{actionData.fieldErrors.authors}</p>
+                ) : null}
+              </CardContent>
+            </Card>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Link
+                to={buildOnboardingUrl({
+                  step: 2,
+                  projectId,
+                  setupRunId,
+                  setupTaskId,
+                })}
+              >
+                <Button type="button" variant="outline">
+                  Back
+                </Button>
+              </Link>
+              <Button type="submit" size="lg" disabled={isSubmitting}>
+                {isSubmitting ? "Saving..." : "Continue to scraping"}
+              </Button>
+            </div>
+          </Form>
+
+          {onboarding.isPhase("strategy") && !authorsDismissed && (
+            <OnboardingOverlay
+              onNext={() => setAuthorsDismissed(true)}
+              nextLabel="Got it!"
+            >
+              <DonkeyBubble title="Add optional author profiles">
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Add real author details so generated articles include <strong className="text-slate-800">credible bylines</strong>.
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  This strengthens perceived expertise and trust signals, which is good for SEO. Skip this step if you want and add authors later.
+                </p>
+              </DonkeyBubble>
+            </OnboardingOverlay>
+          )}
+        </motion.div>
+      ) : null}
+
+      {step === 4 ? (
+        <motion.div key="step4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>Brand profile extraction</CardTitle>
@@ -1078,25 +1485,25 @@ export default function ProjectSetupRoute() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Company name</p>
-                  {brand ? (
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{companyName ?? "Not detected yet"}</p>
-                  ) : (
+                  {!brand || (!companyName && !isTaskCompleted) ? (
                     <div className="mt-2 space-y-2">
                       <ShimmerPlaceholder className="h-5 w-48" />
                       <p className="text-xs text-slate-500">Extracting company identity from homepage and metadata.</p>
                     </div>
+                  ) : (
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{companyName ?? "Not detected yet"}</p>
                   )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Product type</p>
-                  {brand ? (
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{productType ?? "Not detected yet"}</p>
-                  ) : (
+                  {!brand || (!productType && !isTaskCompleted) ? (
                     <div className="mt-2 space-y-2">
                       <ShimmerPlaceholder className="h-5 w-40" />
                       <p className="text-xs text-slate-500">Classifying offer model and category.</p>
                     </div>
+                  ) : (
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{productType ?? "Not detected yet"}</p>
                   )}
                 </div>
               </div>
@@ -1104,92 +1511,52 @@ export default function ProjectSetupRoute() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Differentiators</p>
-                  {brand ? (
-                    differentiators.length > 0 ? (
-                      <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                        {differentiators.slice(0, 6).map((item) => (
-                          <li key={item} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                            {item}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-sm text-slate-600">No differentiators returned yet.</p>
-                    )
-                  ) : (
+                  {!brand || (differentiators.length === 0 && !isTaskCompleted) ? (
                     <div className="mt-3 space-y-2">
                       <ShimmerPlaceholder className="h-4 w-full" />
                       <ShimmerPlaceholder className="h-4 w-11/12" />
                       <ShimmerPlaceholder className="h-4 w-4/5" />
                     </div>
+                  ) : differentiators.length > 0 ? (
+                    <ul className="mt-3 space-y-2 text-sm text-slate-700">
+                      {differentiators.slice(0, 6).map((item) => (
+                        <li key={item} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">No differentiators returned yet.</p>
                   )}
                 </div>
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Suggested ICP niches</p>
-                  {brand ? (
-                    icpNicheNames.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {icpNicheNames.slice(0, 8).map((niche) => (
-                          <span
-                            key={niche}
-                            className="inline-flex items-center rounded-full border border-[#2f6f71]/30 bg-[#2f6f71]/10 px-2.5 py-1 text-xs font-semibold text-[#1e5052]"
-                          >
-                            {niche}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm text-slate-600">No ICP niches returned yet.</p>
-                    )
-                  ) : (
+                  {!brand || (icpNicheNames.length === 0 && !isTaskCompleted) ? (
                     <div className="mt-3 space-y-2">
                       <ShimmerPlaceholder className="h-4 w-full" />
                       <ShimmerPlaceholder className="h-4 w-5/6" />
                     </div>
+                  ) : icpNicheNames.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {icpNicheNames.slice(0, 8).map((niche) => (
+                        <span
+                          key={niche}
+                          className="inline-flex items-center rounded-full border border-[#2f6f71]/30 bg-[#2f6f71]/10 px-2.5 py-1 text-xs font-semibold text-[#1e5052]"
+                        >
+                          {niche}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-slate-600">No ICP niches returned yet.</p>
                   )}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <p className="text-xs uppercase tracking-wide text-slate-500">Scraped assets</p>
-                {brand ? (
-                  brand.brand_assets && brand.brand_assets.length > 0 ? (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {brand.brand_assets.slice(0, 6).map((asset) => (
-                        <button
-                          key={asset.asset_id}
-                          type="button"
-                          className="group rounded-lg border border-slate-200 bg-slate-50 p-2 text-left transition-colors hover:border-[#2f6f71]/50 hover:bg-white"
-                          onClick={() => setExpandedAsset({ url: asset.source_url, role: asset.role })}
-                        >
-                          {assetImageErrors[asset.asset_id] ? (
-                            <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-100 px-2 text-center text-xs text-slate-600">
-                              Preview unavailable
-                            </div>
-                          ) : (
-                            <img
-                              src={asset.source_url}
-                              alt={asset.role}
-                              loading="lazy"
-                              className="h-24 w-full rounded-md border border-slate-200 object-cover bg-white"
-                              onError={() =>
-                                setAssetImageErrors((previous) => ({
-                                  ...previous,
-                                  [asset.asset_id]: true,
-                                }))
-                              }
-                            />
-                          )}
-                          <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{asset.role}</p>
-                          <p className="truncate text-xs text-slate-600">{asset.source_url}</p>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-600">No scraped assets found yet.</p>
-                  )
-                ) : (
+                {!brand || ((!brand.brand_assets || brand.brand_assets.length === 0) && !isTaskCompleted) ? (
                   <div className="mt-3 space-y-2">
                     {[1, 2, 3].map((placeholder) => (
                       <div key={placeholder} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
@@ -1203,6 +1570,40 @@ export default function ProjectSetupRoute() {
                       </div>
                     ))}
                   </div>
+                ) : brand.brand_assets && brand.brand_assets.length > 0 ? (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {brand.brand_assets.slice(0, 6).map((asset) => (
+                      <button
+                        key={asset.asset_id}
+                        type="button"
+                        className="group rounded-lg border border-slate-200 bg-slate-50 p-2 text-left transition-colors hover:border-[#2f6f71]/50 hover:bg-white"
+                        onClick={() => setExpandedAsset({ url: asset.source_url, role: asset.role })}
+                      >
+                        {assetImageErrors[asset.asset_id] ? (
+                          <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-100 px-2 text-center text-xs text-slate-600">
+                            Preview unavailable
+                          </div>
+                        ) : (
+                          <img
+                            src={asset.source_url}
+                            alt={asset.role}
+                            loading="lazy"
+                            className="h-24 w-full rounded-md border border-slate-200 object-cover bg-white"
+                            onError={() =>
+                              setAssetImageErrors((previous) => ({
+                                ...previous,
+                                [asset.asset_id]: true,
+                              }))
+                            }
+                          />
+                        )}
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{asset.role}</p>
+                        <p className="truncate text-xs text-slate-600">{asset.source_url}</p>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-600">No scraped assets found yet.</p>
                 )}
               </div>
 
