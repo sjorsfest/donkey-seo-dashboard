@@ -2,40 +2,55 @@ import { Outlet } from "react-router";
 
 const features = [
   {
-    title: "Real pipelines, zero fluff",
-    description: "Kick off your SEO pipeline without wrestling a complex UI.",
+    icon: "🔍",
+    title: "Keyword research on autopilot",
+    description: "Discover high-impact keywords while you focus on strategy.",
   },
   {
-    title: "Project-first workflow",
-    description: "Create projects fast and keep your runs organized.",
+    icon: "✍️",
+    title: "Content that converts",
+    description: "AI-powered articles optimized for search and engagement.",
   },
   {
-    title: "Built for momentum",
-    description: "Start, pause, and iterate with minimal friction.",
+    icon: "🚀",
+    title: "Zero busywork",
+    description: "From research to publication, completely hands-off.",
   },
 ];
 
 export default function AuthLayout() {
   return (
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-6">
-      <div className="relative w-full max-w-5xl grid gap-8 lg:grid-cols-[1.15fr_0.85fr]">
-        <div className="hidden lg:flex flex-col gap-8 rounded-3xl border border-white/40 bg-white/60 p-8 text-slate-900 shadow-xl backdrop-blur-md">
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-6 bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50">
+      <div className="relative w-full max-w-6xl grid gap-10 lg:grid-cols-[1.2fr_0.8fr] items-center">
+        <div className="hidden lg:flex flex-col gap-10">
           <div>
-            <h1 className="font-display text-4xl font-bold mb-8 text-slate-900">
-              DonkeySEO makes pipelines feel easy.
+            <h1 className="font-display text-5xl font-black mb-4 leading-[1.1]">
+              <span className="text-outline-hero">SEO content</span> that
+              <br />
+              <span className="text-outline" style={{ color: '#86c4ad' }}>
+                brings you leads
+              </span>
             </h1>
+            <p className="text-slate-600 text-lg font-medium leading-relaxed mb-10">
+              Automated keyword research, content creation, and CMS delivery. From setup to published articles.{" "}
+              <span className="font-semibold text-slate-900">Completely hands-off.</span>
+            </p>
 
-            <div className="space-y-4 mb-8">
+            <div className="space-y-4">
               {features.map((feature, index) => (
-                <div key={index} className="flex items-start gap-3">
-                  <div className="mt-1 w-8 h-8 rounded-lg bg-white border-2 border-slate-100 shadow-sm flex items-center justify-center text-lg">
-                    ✨
+                <div key={index} className="flex items-start gap-3 group">
+                  <div className={`w-10 h-10 rounded-xl shadow-md flex items-center justify-center text-xl transform group-hover:scale-110 transition-transform duration-300 ${
+                    index % 2 === 0
+                      ? "bg-gradient-to-br from-yellow-200 to-yellow-300"
+                      : "bg-gradient-to-br from-yellow-100 to-yellow-200"
+                  }`}>
+                    {feature.icon}
                   </div>
-                  <div>
-                    <p className="font-bold text-slate-800 text-sm tracking-tight">
+                  <div className="flex-1">
+                    <p className="font-bold text-slate-900 text-sm mb-0.5">
                       {feature.title}
                     </p>
-                    <p className="text-slate-500 text-xs font-medium leading-relaxed">
+                    <p className="text-slate-600 text-xs leading-snug">
                       {feature.description}
                     </p>
                   </div>
@@ -44,16 +59,16 @@ export default function AuthLayout() {
             </div>
           </div>
 
-          <div className="relative w-full aspect-[4/3] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden transform rotate-1">
-            <div className="h-8 bg-slate-50 border-b border-slate-100 flex items-center px-3 gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-rose-400" />
-              <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+          <div className="relative w-full aspect-[4/3] bg-white rounded-2xl shadow-2xl border-2 border-slate-200 overflow-hidden transform hover:rotate-1 transition-transform">
+            <div className="h-9 bg-gradient-to-b from-slate-50 to-slate-100 border-b border-slate-200 flex items-center px-4 gap-2">
+              <div className="w-3 h-3 rounded-full bg-rose-400 shadow-sm" />
+              <div className="w-3 h-3 rounded-full bg-amber-400 shadow-sm" />
+              <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-sm" />
             </div>
             <img
               src="/static/homepage.png"
               alt="Dashboard Preview"
-              className="absolute inset-0 top-[33px] w-full h-full object-contain object-top"
+              className="absolute inset-0 top-[37px] w-full h-full object-contain object-top"
             />
           </div>
         </div>

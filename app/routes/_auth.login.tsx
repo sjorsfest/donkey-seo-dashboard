@@ -1,4 +1,5 @@
 import { Form, Link, data, redirect, useActionData, useNavigation } from "react-router";
+import { Loader2 } from "lucide-react";
 import type { Route } from "./+types/_auth.login";
 import type { components } from "~/types/api.generated";
 import { ApiClient } from "~/lib/api.server";
@@ -110,63 +111,65 @@ export default function Login() {
 
   return (
     <div className="w-full max-w-md mx-auto">
-      <div className="bg-white p-8 rounded-3xl border-2 border-black" style={{ boxShadow: "4px 4px 0px 0px #1a1a1a" }}>
+      <div className="bg-white/95 backdrop-blur-sm p-8 rounded-3xl border-2 border-slate-900/15 shadow-[3px_3px_0_rgba(0,0,0,0.1),inset_0_1px_0_0_rgba(255,255,255,0.5)]">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 transform rotate-3 overflow-hidden bg-white border-2 border-black">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 transform rotate-3 hover:rotate-6 transition-transform duration-500 overflow-hidden bg-white border-2 border-slate-900/15 cursor-pointer">
             <img src="/static/donkey.png" alt="DonkeySEO" className="w-12 h-12 object-contain" />
           </div>
-          <h2 className="font-display text-3xl font-bold text-slate-900 mb-2">
+          <h2 className="font-display text-3xl font-bold text-slate-900 mb-2" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
             Welcome back!
           </h2>
           <p className="text-slate-500">Log in to launch your next pipeline.</p>
         </div>
 
         {actionData?.error && (
-          <div className="mb-6 p-4 bg-rose-50 border border-rose-100 text-rose-600 rounded-xl text-sm font-medium">
+          <div className="mb-6 p-4 bg-rose-50 border-2 border-rose-200 text-rose-700 rounded-xl text-sm font-medium">
             {actionData.error}
           </div>
         )}
 
-        <Form method="post" className="space-y-3">
-          <button
-            type="submit"
-            name="intent"
-            value="oauth:google"
-            disabled={navigation.state === "submitting"}
-            className="w-full h-11 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 disabled:opacity-70"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4">
-              <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.3h6.5a5.6 5.6 0 0 1-2.4 3.7v3h3.9c2.3-2.1 3.5-5.1 3.5-8.7Z" />
-              <path fill="#34A853" d="M12 24c3.2 0 5.9-1 7.9-2.9l-3.9-3a7.1 7.1 0 0 1-10.6-3.7H1.3v3.1A12 12 0 0 0 12 24Z" />
-              <path fill="#FBBC05" d="M5.4 14.4A7.2 7.2 0 0 1 5 12c0-.8.1-1.6.4-2.4V6.5H1.3A12 12 0 0 0 0 12c0 1.9.4 3.8 1.3 5.5l4.1-3.1Z" />
-              <path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.5 1.7l3.4-3.4A11.8 11.8 0 0 0 12 0C7.3 0 3.1 2.7 1.3 6.5l4.1 3.1a7.1 7.1 0 0 1 6.6-4.8Z" />
-            </svg>
-            {isGoogleLoading ? "Redirecting..." : "Continue with Google"}
-          </button>
+        <div className="p-4 rounded-2xl bg-slate-50/50">
+          <Form method="post" className="space-y-4">
+            <button
+              type="submit"
+              name="intent"
+              value="oauth:google"
+              disabled={navigation.state === "submitting"}
+              className="w-full h-11 rounded-xl border-2 border-slate-900/10 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 hover:translate-y-[-1px] hover:shadow-[3px_3px_0_rgba(0,0,0,0.08)] transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4">
+                <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.3h6.5a5.6 5.6 0 0 1-2.4 3.7v3h3.9c2.3-2.1 3.5-5.1 3.5-8.7Z" />
+                <path fill="#34A853" d="M12 24c3.2 0 5.9-1 7.9-2.9l-3.9-3a7.1 7.1 0 0 1-10.6-3.7H1.3v3.1A12 12 0 0 0 12 24Z" />
+                <path fill="#FBBC05" d="M5.4 14.4A7.2 7.2 0 0 1 5 12c0-.8.1-1.6.4-2.4V6.5H1.3A12 12 0 0 0 0 12c0 1.9.4 3.8 1.3 5.5l4.1-3.1Z" />
+                <path fill="#EA4335" d="M12 4.8c1.7 0 3.2.6 4.5 1.7l3.4-3.4A11.8 11.8 0 0 0 12 0C7.3 0 3.1 2.7 1.3 6.5l4.1 3.1a7.1 7.1 0 0 1 6.6-4.8Z" />
+              </svg>
+              {isGoogleLoading ? "Redirecting..." : "Continue with Google"}
+            </button>
 
-          <button
-            type="submit"
-            name="intent"
-            value="oauth:twitter"
-            disabled={navigation.state === "submitting"}
-            className="w-full h-11 rounded-xl border border-slate-200 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 disabled:opacity-70"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4 fill-current">
-              <path d="M18.9 2H22l-6.8 7.8 8 10.2H17L12 13.6 6.4 20H3.3l7.3-8.4L3 2h6.3l4.4 5.8L18.9 2Zm-1.1 16.2h1.7L8.4 3.7H6.5l11.3 14.5Z" />
-            </svg>
-            {isTwitterLoading ? "Redirecting..." : "Continue with Twitter"}
-          </button>
-        </Form>
+            <button
+              type="submit"
+              name="intent"
+              value="oauth:twitter"
+              disabled={navigation.state === "submitting"}
+              className="w-full h-11 rounded-xl border-2 border-slate-900/10 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 hover:translate-y-[-1px] hover:shadow-[3px_3px_0_rgba(0,0,0,0.08)] transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4 fill-current">
+                <path d="M18.9 2H22l-6.8 7.8 8 10.2H17L12 13.6 6.4 20H3.3l7.3-8.4L3 2h6.3l4.4 5.8L18.9 2Zm-1.1 16.2h1.7L8.4 3.7H6.5l11.3 14.5Z" />
+              </svg>
+              {isTwitterLoading ? "Redirecting..." : "Continue with Twitter"}
+            </button>
+          </Form>
+        </div>
 
-        <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+        <div className="my-6 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-400 border-t border-slate-100 pt-6">
           <div className="h-px flex-1 bg-slate-200" />
           <span>or</span>
           <div className="h-px flex-1 bg-slate-200" />
         </div>
 
-        <Form method="post" className="space-y-5">
-          <div className="space-y-1.5">
-            <label htmlFor="email" className="block text-sm font-bold text-slate-700 ml-1">
+        <Form method="post" className="space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="email" className="block text-sm font-semibold text-slate-700">
               Email
             </label>
             <input
@@ -175,12 +178,12 @@ export default function Login() {
               name="email"
               required
               placeholder="you@company.com"
-              className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-secondary/70 focus:ring-2 focus:ring-secondary/30"
+              className="h-11 w-full rounded-xl border-2 border-slate-900/10 px-3 text-sm outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-400/20 focus:translate-y-[-1px]"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label htmlFor="password" className="block text-sm font-bold text-slate-700 ml-1">
+          <div className="space-y-2">
+            <label htmlFor="password" className="block text-sm font-semibold text-slate-700">
               Password
             </label>
             <input
@@ -189,15 +192,18 @@ export default function Login() {
               name="password"
               required
               placeholder="••••••••"
-              className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm focus:border-secondary/70 focus:ring-2 focus:ring-secondary/30"
+              className="h-11 w-full rounded-xl border-2 border-slate-900/10 px-3 text-sm outline-none transition-all duration-200 placeholder:text-slate-400 focus:border-yellow-500 focus:ring-2 focus:ring-yellow-400/20 focus:translate-y-[-1px]"
             />
           </div>
 
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full h-11 text-base font-bold rounded-xl shadow-lg shadow-secondary/20 transition-all duration-200 bg-secondary text-secondary-foreground hover:scale-[1.02] active:scale-[0.98] disabled:opacity-70"
+            aria-busy={isLoading}
+            aria-label={isLoading ? "Signing in, please wait" : "Sign in to your account"}
+            className="w-full h-12 text-base font-bold rounded-xl shadow-lg shadow-secondary/20 transition-all duration-200 bg-secondary text-secondary-foreground hover:scale-[1.02] hover:border-t-2 hover:border-t-yellow-400 active:scale-[0.98] disabled:opacity-70 disabled:grayscale disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
             {isLoading ? "Signing in..." : "Sign in"}
           </button>
         </Form>
