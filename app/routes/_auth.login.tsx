@@ -6,6 +6,7 @@ import { ApiClient } from "~/lib/api.server";
 import { commitSession, getSession } from "~/lib/session.server";
 
 type Token = components["schemas"]["Token"];
+type UserResponse = components["schemas"]["UserResponse"];
 type SocialProvider = "google" | "twitter";
 
 const SOCIAL_PROVIDERS = new Set<SocialProvider>(["google", "twitter"]);
@@ -39,6 +40,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const session = await getSession(request.headers.get("Cookie"));
   const accessToken = session.get("accessToken") as string | undefined;
   if (accessToken) {
+    const api = new ApiClient(request);
+    try {
+      const meResponse = await fetch(api.url("/auth/me"), {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (meResponse.ok) {
+        const user = (await meResponse.json()) as UserResponse;
+        return redirect(user.email_verified ? "/project" : "/verify-email/pending");
+      }
+    } catch {
+      // Fall back to dashboard redirect if user lookup fails.
+    }
     return redirect("/project");
   }
   return null;
@@ -94,7 +107,22 @@ export async function action({ request }: Route.ActionArgs) {
   session.set("accessToken", tokens.access_token);
   session.set("refreshToken", tokens.refresh_token);
 
-  return redirect("/project", {
+  let redirectTo = "/project";
+  try {
+    const meResponse = await fetch(api.url("/auth/me"), {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    if (meResponse.ok) {
+      const user = (await meResponse.json()) as UserResponse;
+      if (!user.email_verified) {
+        redirectTo = "/verify-email/pending";
+      }
+    }
+  } catch {
+    // Fall back to dashboard redirect if user lookup fails.
+  }
+
+  return redirect(redirectTo, {
     headers: {
       "Set-Cookie": await commitSession(session),
     },

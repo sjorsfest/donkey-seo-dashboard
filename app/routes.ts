@@ -5,6 +5,8 @@ export default [
   layout("routes/_auth.tsx", [
     route("login", "routes/_auth.login.tsx"),
     route("register", "routes/_auth.register.tsx"),
+    route("verify-email", "routes/_auth.verify-email.tsx"),
+    route("verify-email/pending", "routes/_auth.verify-email.pending.tsx"),
     route("auth/callback", "routes/auth.callback.tsx"),
   ]),
   layout("routes/_dashboard.tsx", [

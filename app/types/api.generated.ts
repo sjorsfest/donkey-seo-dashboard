@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/auth/register": {
+    "/api/v1/auth/register": {
         parameters: {
             query?: never;
             header?: never;
@@ -17,14 +17,14 @@ export interface paths {
          * Register user
          * @description Create a local user account and return the created user profile.
          */
-        post: operations["register_auth_register_post"];
+        post: operations["register_api_v1_auth_register_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/auth/login": {
+    "/api/v1/auth/login": {
         parameters: {
             query?: never;
             header?: never;
@@ -37,14 +37,14 @@ export interface paths {
          * Login user
          * @description Authenticate with email and password, then return access and refresh JWT tokens.
          */
-        post: operations["login_auth_login_post"];
+        post: operations["login_api_v1_auth_login_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/auth/refresh": {
+    "/api/v1/auth/refresh": {
         parameters: {
             query?: never;
             header?: never;
@@ -57,14 +57,14 @@ export interface paths {
          * Refresh tokens
          * @description Validate a refresh token and issue a new access and refresh JWT token pair.
          */
-        post: operations["refresh_token_auth_refresh_post"];
+        post: operations["refresh_token_api_v1_auth_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/auth/me": {
+    "/api/v1/auth/me": {
         parameters: {
             query?: never;
             header?: never;
@@ -75,7 +75,7 @@ export interface paths {
          * Get current user
          * @description Return the authenticated user's profile derived from the bearer access token.
          */
-        get: operations["get_current_user_info_auth_me_get"];
+        get: operations["get_current_user_info_api_v1_auth_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -84,7 +84,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/oauth/google/start": {
+    "/api/v1/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Verify email from link
+         * @description Consume a signed email verification token from URL query and render result page.
+         */
+        get: operations["verify_email_from_link_api_v1_auth_verify_email_get"];
+        put?: never;
+        /**
+         * Verify email address
+         * @description Consume a signed email verification token and mark the user's email as verified.
+         */
+        post: operations["verify_email_api_v1_auth_verify_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/verify-email/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend verification email
+         * @description Send another verification email for the authenticated user if not yet verified.
+         */
+        post: operations["resend_verification_email_api_v1_auth_verify_email_resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/oauth/google/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -95,7 +139,7 @@ export interface paths {
          * Start Google OAuth
          * @description Validate the frontend redirect URI and redirect the browser to Google's OAuth consent screen.
          */
-        get: operations["oauth_google_start_auth_oauth_google_start_get"];
+        get: operations["oauth_google_start_api_v1_auth_oauth_google_start_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -104,7 +148,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/oauth/twitter/start": {
+    "/api/v1/auth/oauth/twitter/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -115,7 +159,7 @@ export interface paths {
          * Start Twitter OAuth
          * @description Validate the frontend redirect URI and redirect the browser to Twitter's OAuth consent screen.
          */
-        get: operations["oauth_twitter_start_auth_oauth_twitter_start_get"];
+        get: operations["oauth_twitter_start_api_v1_auth_oauth_twitter_start_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -124,7 +168,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/oauth/google/callback": {
+    "/api/v1/auth/oauth/google/callback": {
         parameters: {
             query?: never;
             header?: never;
@@ -135,7 +179,7 @@ export interface paths {
          * Handle Google OAuth callback
          * @description Exchange the Google authorization code, sign in or create a local user, then redirect to the frontend with issued JWT tokens.
          */
-        get: operations["oauth_google_callback_auth_oauth_google_callback_get"];
+        get: operations["oauth_google_callback_api_v1_auth_oauth_google_callback_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -144,7 +188,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/auth/oauth/twitter/callback": {
+    "/api/v1/auth/oauth/twitter/callback": {
         parameters: {
             query?: never;
             header?: never;
@@ -155,7 +199,7 @@ export interface paths {
          * Handle Twitter OAuth callback
          * @description Exchange the Twitter authorization code, sign in or create a local user, then redirect to the frontend with issued JWT tokens.
          */
-        get: operations["oauth_twitter_callback_auth_oauth_twitter_callback_get"];
+        get: operations["oauth_twitter_callback_api_v1_auth_oauth_twitter_callback_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -164,7 +208,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/billing/plans": {
+    "/api/v1/billing/plans": {
         parameters: {
             query?: never;
             header?: never;
@@ -175,7 +219,7 @@ export interface paths {
          * List billing plans
          * @description Return configured Stripe-backed pricing options for dashboard plan selection.
          */
-        get: operations["list_billing_plans_billing_plans_get"];
+        get: operations["list_billing_plans_api_v1_billing_plans_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -184,7 +228,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/billing/me": {
+    "/api/v1/billing/me": {
         parameters: {
             query?: never;
             header?: never;
@@ -192,7 +236,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get current billing status */
-        get: operations["get_my_billing_status_billing_me_get"];
+        get: operations["get_my_billing_status_api_v1_billing_me_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -201,7 +245,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/billing/usage": {
+    "/api/v1/billing/usage": {
         parameters: {
             query?: never;
             header?: never;
@@ -212,7 +256,7 @@ export interface paths {
          * Get current usage
          * @description Return article usage counters for the current account. Paid plans use monthly windows; free users use lifetime window.
          */
-        get: operations["get_my_usage_billing_usage_get"];
+        get: operations["get_my_usage_api_v1_billing_usage_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -221,7 +265,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/billing/checkout-session": {
+    "/api/v1/billing/checkout-session": {
         parameters: {
             query?: never;
             header?: never;
@@ -231,14 +275,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Stripe checkout session */
-        post: operations["create_checkout_session_billing_checkout_session_post"];
+        post: operations["create_checkout_session_api_v1_billing_checkout_session_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/billing/portal-session": {
+    "/api/v1/billing/portal-session": {
         parameters: {
             query?: never;
             header?: never;
@@ -248,14 +292,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Stripe customer portal session */
-        post: operations["create_billing_portal_session_billing_portal_session_post"];
+        post: operations["create_billing_portal_session_api_v1_billing_portal_session_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/billing/webhooks/stripe": {
+    "/api/v1/billing/webhooks/stripe": {
         parameters: {
             query?: never;
             header?: never;
@@ -265,14 +309,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Stripe webhook receiver */
-        post: operations["stripe_webhook_billing_webhooks_stripe_post"];
+        post: operations["stripe_webhook_api_v1_billing_webhooks_stripe_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/": {
+    "/api/v1/projects/": {
         parameters: {
             query?: never;
             header?: never;
@@ -283,20 +327,20 @@ export interface paths {
          * List projects
          * @description Return paginated projects for the authenticated user, ordered by most recent.
          */
-        get: operations["list_projects_projects__get"];
+        get: operations["list_projects_api_v1_projects__get"];
         put?: never;
         /**
          * Create project
          * @description Create a keyword research project with domain, locale, goals, and optional pipeline settings.
          */
-        post: operations["create_project_projects__post"];
+        post: operations["create_project_api_v1_projects__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/onboarding/bootstrap": {
+    "/api/v1/projects/onboarding/bootstrap": {
         parameters: {
             query?: never;
             header?: never;
@@ -309,14 +353,14 @@ export interface paths {
          * Bootstrap onboarding project
          * @description Create a project and immediately queue setup pipeline steps 1-5 for domain + brand extraction.
          */
-        post: operations["bootstrap_onboarding_project_projects_onboarding_bootstrap_post"];
+        post: operations["bootstrap_onboarding_project_api_v1_projects_onboarding_bootstrap_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/{project_id}": {
+    "/api/v1/projects/{project_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -327,24 +371,24 @@ export interface paths {
          * Get project
          * @description Return a single project by ID when it belongs to the authenticated user.
          */
-        get: operations["get_project_projects__project_id__get"];
+        get: operations["get_project_api_v1_projects__project_id__get"];
         /**
          * Update project
          * @description Apply partial updates to editable fields on an existing project.
          */
-        put: operations["update_project_projects__project_id__put"];
+        put: operations["update_project_api_v1_projects__project_id__put"];
         post?: never;
         /**
          * Delete project
          * @description Delete a project owned by the authenticated user.
          */
-        delete: operations["delete_project_projects__project_id__delete"];
+        delete: operations["delete_project_api_v1_projects__project_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/{project_id}/api-key": {
+    "/api/v1/projects/{project_id}/api-key": {
         parameters: {
             query?: never;
             header?: never;
@@ -357,14 +401,14 @@ export interface paths {
          * Generate project integration API key
          * @description Generate and persist a new integration API key for this project. Calling this endpoint rotates any previous key.
          */
-        post: operations["generate_project_api_key_projects__project_id__api_key_post"];
+        post: operations["generate_project_api_key_api_v1_projects__project_id__api_key_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/projects/{project_id}/webhook-secret": {
+    "/api/v1/projects/{project_id}/webhook-secret": {
         parameters: {
             query?: never;
             header?: never;
@@ -377,14 +421,14 @@ export interface paths {
          * Generate project webhook secret
          * @description Generate and persist a new webhook signing secret for this project. Calling this endpoint rotates any previous secret.
          */
-        post: operations["generate_project_webhook_secret_projects__project_id__webhook_secret_post"];
+        post: operations["generate_project_webhook_secret_api_v1_projects__project_id__webhook_secret_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/start": {
+    "/api/v1/pipeline/{project_id}/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -397,14 +441,14 @@ export interface paths {
          * Start pipeline run
          * @description Create a new module pipeline run and queue background execution.
          */
-        post: operations["start_pipeline_pipeline__project_id__start_post"];
+        post: operations["start_pipeline_api_v1_pipeline__project_id__start_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/runs": {
+    "/api/v1/pipeline/{project_id}/runs": {
         parameters: {
             query?: never;
             header?: never;
@@ -412,7 +456,7 @@ export interface paths {
             cookie?: never;
         };
         /** List pipeline runs */
-        get: operations["list_pipeline_runs_pipeline__project_id__runs_get"];
+        get: operations["list_pipeline_runs_api_v1_pipeline__project_id__runs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -421,7 +465,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/runs/{run_id}": {
+    "/api/v1/pipeline/{project_id}/runs/{run_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -429,7 +473,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get pipeline run */
-        get: operations["get_pipeline_run_pipeline__project_id__runs__run_id__get"];
+        get: operations["get_pipeline_run_api_v1_pipeline__project_id__runs__run_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -438,7 +482,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/runs/{run_id}/progress": {
+    "/api/v1/pipeline/{project_id}/runs/{run_id}/progress": {
         parameters: {
             query?: never;
             header?: never;
@@ -446,7 +490,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get pipeline progress */
-        get: operations["get_pipeline_progress_pipeline__project_id__runs__run_id__progress_get"];
+        get: operations["get_pipeline_progress_api_v1_pipeline__project_id__runs__run_id__progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -455,7 +499,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/runs/{run_id}/discovery-snapshots": {
+    "/api/v1/pipeline/{project_id}/runs/{run_id}/discovery-snapshots": {
         parameters: {
             query?: never;
             header?: never;
@@ -463,7 +507,7 @@ export interface paths {
             cookie?: never;
         };
         /** List discovery snapshots */
-        get: operations["list_discovery_snapshots_pipeline__project_id__runs__run_id__discovery_snapshots_get"];
+        get: operations["list_discovery_snapshots_api_v1_pipeline__project_id__runs__run_id__discovery_snapshots_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -472,7 +516,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/pause": {
+    "/api/v1/pipeline/{project_id}/pause": {
         parameters: {
             query?: never;
             header?: never;
@@ -482,14 +526,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Pause running pipeline */
-        post: operations["pause_pipeline_pipeline__project_id__pause_post"];
+        post: operations["pause_pipeline_api_v1_pipeline__project_id__pause_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/runs/{run_id}/pause": {
+    "/api/v1/pipeline/{project_id}/runs/{run_id}/pause": {
         parameters: {
             query?: never;
             header?: never;
@@ -499,14 +543,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Pause run by id */
-        post: operations["pause_pipeline_run_pipeline__project_id__runs__run_id__pause_post"];
+        post: operations["pause_pipeline_run_api_v1_pipeline__project_id__runs__run_id__pause_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/pipeline/{project_id}/resume/{run_id}": {
+    "/api/v1/pipeline/{project_id}/resume/{run_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -516,14 +560,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Resume paused pipeline */
-        post: operations["resume_pipeline_pipeline__project_id__resume__run_id__post"];
+        post: operations["resume_pipeline_api_v1_pipeline__project_id__resume__run_id__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/tasks/{task_id}": {
+    "/api/v1/tasks/{task_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -534,7 +578,7 @@ export interface paths {
          * Get task status
          * @description Return asynchronous task status and payload from Redis by task ID.
          */
-        get: operations["get_task_status_tasks__task_id__get"];
+        get: operations["get_task_status_api_v1_tasks__task_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -543,7 +587,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/keywords/{project_id}": {
+    "/api/v1/keywords/{project_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -554,20 +598,20 @@ export interface paths {
          * List keywords
          * @description Return paginated keywords for a project with optional filters for intent, status, topic, volume, difficulty, and text search.
          */
-        get: operations["list_keywords_keywords__project_id__get"];
+        get: operations["list_keywords_api_v1_keywords__project_id__get"];
         put?: never;
         /**
          * Create keyword
          * @description Add a new keyword manually to the project.
          */
-        post: operations["create_keyword_keywords__project_id__post"];
+        post: operations["create_keyword_api_v1_keywords__project_id__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/keywords/{project_id}/{keyword_id}": {
+    "/api/v1/keywords/{project_id}/{keyword_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -578,24 +622,24 @@ export interface paths {
          * Get keyword
          * @description Return detailed information for a single keyword in the project.
          */
-        get: operations["get_keyword_keywords__project_id___keyword_id__get"];
+        get: operations["get_keyword_api_v1_keywords__project_id___keyword_id__get"];
         /**
          * Update keyword
          * @description Apply partial updates to an existing keyword in the project.
          */
-        put: operations["update_keyword_keywords__project_id___keyword_id__put"];
+        put: operations["update_keyword_api_v1_keywords__project_id___keyword_id__put"];
         post?: never;
         /**
          * Exclude keyword
          * @description Soft-delete a keyword by marking its status as excluded.
          */
-        delete: operations["delete_keyword_keywords__project_id___keyword_id__delete"];
+        delete: operations["delete_keyword_api_v1_keywords__project_id___keyword_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/keywords/{project_id}/bulk-update": {
+    "/api/v1/keywords/{project_id}/bulk-update": {
         parameters: {
             query?: never;
             header?: never;
@@ -608,14 +652,14 @@ export interface paths {
          * Bulk update keywords
          * @description Update status, intent, or topic assignment for multiple keywords in one request.
          */
-        post: operations["bulk_update_keywords_keywords__project_id__bulk_update_post"];
+        post: operations["bulk_update_keywords_api_v1_keywords__project_id__bulk_update_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/topics/{project_id}": {
+    "/api/v1/topics/{project_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -626,20 +670,20 @@ export interface paths {
          * List topics
          * @description Return paginated topics for a project, with optional eligibility filtering based on fit tier.
          */
-        get: operations["list_topics_topics__project_id__get"];
+        get: operations["list_topics_api_v1_topics__project_id__get"];
         put?: never;
         /**
          * Create topic
          * @description Create a topic within a project, optionally linked to a parent topic.
          */
-        post: operations["create_topic_topics__project_id__post"];
+        post: operations["create_topic_api_v1_topics__project_id__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/topics/{project_id}/ranked": {
+    "/api/v1/topics/{project_id}/ranked": {
         parameters: {
             query?: never;
             header?: never;
@@ -650,7 +694,7 @@ export interface paths {
          * List ranked topics
          * @description Return prioritized topics for a project ordered by priority rank.
          */
-        get: operations["get_ranked_topics_topics__project_id__ranked_get"];
+        get: operations["get_ranked_topics_api_v1_topics__project_id__ranked_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -659,7 +703,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/topics/{project_id}/hierarchy": {
+    "/api/v1/topics/{project_id}/hierarchy": {
         parameters: {
             query?: never;
             header?: never;
@@ -670,7 +714,7 @@ export interface paths {
          * Get topic hierarchy
          * @description Return the project topic tree with nested parent-child relationships.
          */
-        get: operations["get_topic_hierarchy_topics__project_id__hierarchy_get"];
+        get: operations["get_topic_hierarchy_api_v1_topics__project_id__hierarchy_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -679,7 +723,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/topics/{project_id}/{topic_id}": {
+    "/api/v1/topics/{project_id}/{topic_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -690,24 +734,24 @@ export interface paths {
          * Get topic
          * @description Return detailed information for a single topic.
          */
-        get: operations["get_topic_topics__project_id___topic_id__get"];
+        get: operations["get_topic_api_v1_topics__project_id___topic_id__get"];
         /**
          * Update topic
          * @description Apply partial updates to an existing topic.
          */
-        put: operations["update_topic_topics__project_id___topic_id__put"];
+        put: operations["update_topic_api_v1_topics__project_id___topic_id__put"];
         post?: never;
         /**
          * Delete topic
          * @description Delete a topic from the project.
          */
-        delete: operations["delete_topic_topics__project_id___topic_id__delete"];
+        delete: operations["delete_topic_api_v1_topics__project_id___topic_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/topics/{project_id}/merge": {
+    "/api/v1/topics/{project_id}/merge": {
         parameters: {
             query?: never;
             header?: never;
@@ -720,14 +764,14 @@ export interface paths {
          * Merge topics
          * @description Merge multiple source topics into a new target topic and reassign linked keywords to it.
          */
-        post: operations["merge_topics_topics__project_id__merge_post"];
+        post: operations["merge_topics_api_v1_topics__project_id__merge_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/briefs": {
+    "/api/v1/content/{project_id}/briefs": {
         parameters: {
             query?: never;
             header?: never;
@@ -738,20 +782,20 @@ export interface paths {
          * List content briefs
          * @description Return paginated content briefs for a project with optional status filtering.
          */
-        get: operations["list_briefs_content__project_id__briefs_get"];
+        get: operations["list_briefs_api_v1_content__project_id__briefs_get"];
         put?: never;
         /**
          * Create content brief
          * @description Create a new content brief for a project topic and primary keyword.
          */
-        post: operations["create_brief_content__project_id__briefs_post"];
+        post: operations["create_brief_api_v1_content__project_id__briefs_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/calendar": {
+    "/api/v1/content/{project_id}/calendar": {
         parameters: {
             query?: never;
             header?: never;
@@ -762,7 +806,7 @@ export interface paths {
          * Get content calendar
          * @description Return scheduled content items keyed by proposed publication date with current production/publish state.
          */
-        get: operations["get_content_calendar_content__project_id__calendar_get"];
+        get: operations["get_content_calendar_api_v1_content__project_id__calendar_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -771,7 +815,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/briefs/{brief_id}": {
+    "/api/v1/content/{project_id}/briefs/{brief_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -782,24 +826,24 @@ export interface paths {
          * Get content brief
          * @description Return detailed information for a specific content brief.
          */
-        get: operations["get_brief_content__project_id__briefs__brief_id__get"];
+        get: operations["get_brief_api_v1_content__project_id__briefs__brief_id__get"];
         /**
          * Update content brief
          * @description Apply partial updates to an existing content brief.
          */
-        put: operations["update_brief_content__project_id__briefs__brief_id__put"];
+        put: operations["update_brief_api_v1_content__project_id__briefs__brief_id__put"];
         post?: never;
         /**
          * Delete content brief
          * @description Delete a content brief from the project.
          */
-        delete: operations["delete_brief_content__project_id__briefs__brief_id__delete"];
+        delete: operations["delete_brief_api_v1_content__project_id__briefs__brief_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/briefs/{brief_id}/instructions": {
+    "/api/v1/content/{project_id}/briefs/{brief_id}/instructions": {
         parameters: {
             query?: never;
             header?: never;
@@ -810,7 +854,7 @@ export interface paths {
          * Get writer instructions
          * @description Return the generated writer instructions attached to a content brief, if available.
          */
-        get: operations["get_writer_instructions_content__project_id__briefs__brief_id__instructions_get"];
+        get: operations["get_writer_instructions_api_v1_content__project_id__briefs__brief_id__instructions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -819,7 +863,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/articles": {
+    "/api/v1/content/{project_id}/articles": {
         parameters: {
             query?: never;
             header?: never;
@@ -830,7 +874,7 @@ export interface paths {
          * List generated articles
          * @description Return paginated generated article artifacts for a project.
          */
-        get: operations["list_articles_content__project_id__articles_get"];
+        get: operations["list_articles_api_v1_content__project_id__articles_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -839,7 +883,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/briefs/{brief_id}/article": {
+    "/api/v1/content/{project_id}/briefs/{brief_id}/article": {
         parameters: {
             query?: never;
             header?: never;
@@ -850,7 +894,7 @@ export interface paths {
          * Get article by brief
          * @description Return the canonical generated article for a brief.
          */
-        get: operations["get_article_for_brief_content__project_id__briefs__brief_id__article_get"];
+        get: operations["get_article_for_brief_api_v1_content__project_id__briefs__brief_id__article_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -859,7 +903,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/briefs/{brief_id}/article/regenerate": {
+    "/api/v1/content/{project_id}/briefs/{brief_id}/article/regenerate": {
         parameters: {
             query?: never;
             header?: never;
@@ -872,14 +916,14 @@ export interface paths {
          * Regenerate article
          * @description Regenerate article content for a brief and increment article version.
          */
-        post: operations["regenerate_article_content__project_id__briefs__brief_id__article_regenerate_post"];
+        post: operations["regenerate_article_api_v1_content__project_id__briefs__brief_id__article_regenerate_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/content/{project_id}/articles/{article_id}/versions/{version_number}": {
+    "/api/v1/content/{project_id}/articles/{article_id}/versions/{version_number}": {
         parameters: {
             query?: never;
             header?: never;
@@ -890,7 +934,7 @@ export interface paths {
          * Get article version
          * @description Fetch an immutable article version snapshot by version number.
          */
-        get: operations["get_article_version_content__project_id__articles__article_id__versions__version_number__get"];
+        get: operations["get_article_version_api_v1_content__project_id__articles__article_id__versions__version_number__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -899,7 +943,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/brand/{project_id}/visual-context": {
+    "/api/v1/brand/{project_id}/visual-context": {
         parameters: {
             query?: never;
             header?: never;
@@ -910,7 +954,7 @@ export interface paths {
          * Get brand visual context
          * @description Return reusable visual context for image generation.
          */
-        get: operations["get_brand_visual_context_brand__project_id__visual_context_get"];
+        get: operations["get_brand_visual_context_api_v1_brand__project_id__visual_context_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -919,7 +963,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/brand/{project_id}/assets/ingest": {
+    "/api/v1/brand/{project_id}/assets/ingest": {
         parameters: {
             query?: never;
             header?: never;
@@ -932,14 +976,14 @@ export interface paths {
          * Ingest brand assets from URLs
          * @description Ingest manually supplied asset URLs into private storage.
          */
-        post: operations["ingest_brand_assets_brand__project_id__assets_ingest_post"];
+        post: operations["ingest_brand_assets_api_v1_brand__project_id__assets_ingest_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/brand/{project_id}/assets/{asset_id}/signed-read-url": {
+    "/api/v1/brand/{project_id}/assets/{asset_id}/signed-read-url": {
         parameters: {
             query?: never;
             header?: never;
@@ -952,14 +996,14 @@ export interface paths {
          * Get signed read URL for a private brand asset
          * @description Mint a short-lived signed URL for a brand asset object key.
          */
-        post: operations["get_brand_asset_signed_read_url_brand__project_id__assets__asset_id__signed_read_url_post"];
+        post: operations["get_brand_asset_signed_read_url_api_v1_brand__project_id__assets__asset_id__signed_read_url_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/brand/{project_id}/visual-style": {
+    "/api/v1/brand/{project_id}/visual-style": {
         parameters: {
             query?: never;
             header?: never;
@@ -976,10 +1020,10 @@ export interface paths {
          * Patch visual style guide and prompt contract
          * @description Apply manual overrides to visual style fields.
          */
-        patch: operations["patch_brand_visual_style_brand__project_id__visual_style_patch"];
+        patch: operations["patch_brand_visual_style_api_v1_brand__project_id__visual_style_patch"];
         trace?: never;
     };
-    "/authors/{project_id}": {
+    "/api/v1/authors/{project_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -990,20 +1034,20 @@ export interface paths {
          * List project authors
          * @description Return all author profiles configured for a project.
          */
-        get: operations["list_authors_authors__project_id__get"];
+        get: operations["list_authors_api_v1_authors__project_id__get"];
         put?: never;
         /**
          * Create project author
          * @description Create a new author profile for byline attribution.
          */
-        post: operations["create_author_authors__project_id__post"];
+        post: operations["create_author_api_v1_authors__project_id__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/authors/{project_id}/{author_id}": {
+    "/api/v1/authors/{project_id}/{author_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1014,21 +1058,21 @@ export interface paths {
          * Get project author
          * @description Return one author profile by ID within a project.
          */
-        get: operations["get_author_authors__project_id___author_id__get"];
+        get: operations["get_author_api_v1_authors__project_id___author_id__get"];
         put?: never;
         post?: never;
         /**
          * Delete project author
          * @description Delete an author profile from a project.
          */
-        delete: operations["delete_author_authors__project_id___author_id__delete"];
+        delete: operations["delete_author_api_v1_authors__project_id___author_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update project author
          * @description Patch mutable author profile fields.
          */
-        patch: operations["update_author_authors__project_id___author_id__patch"];
+        patch: operations["update_author_api_v1_authors__project_id___author_id__patch"];
         trace?: never;
     };
     "/health": {
@@ -1075,6 +1119,14 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AuthMessageResponse
+         * @description Simple auth message response.
+         */
+        AuthMessageResponse: {
+            /** Message */
+            message: string;
+        };
         /**
          * AuthorCreate
          * @description Schema for creating an author profile.
@@ -2031,6 +2083,14 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * EmailVerificationTokenRequest
+         * @description Schema for verifying email with a token.
+         */
+        EmailVerificationTokenRequest: {
+            /** Token */
+            token: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2826,7 +2886,7 @@ export interface components {
         };
         /**
          * TokenRefresh
-         * @description Schema for token refresh request.
+         * @description Schema for refresh token request.
          */
         TokenRefresh: {
             /** Refresh Token */
@@ -3147,6 +3207,8 @@ export interface components {
             email: string;
             /** Full Name */
             full_name: string | null;
+            /** Email Verified */
+            email_verified: boolean;
             /** Is Active */
             is_active: boolean;
         };
@@ -3212,7 +3274,7 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    register_auth_register_post: {
+    register_api_v1_auth_register_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3245,7 +3307,7 @@ export interface operations {
             };
         };
     };
-    login_auth_login_post: {
+    login_api_v1_auth_login_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3278,7 +3340,7 @@ export interface operations {
             };
         };
     };
-    refresh_token_auth_refresh_post: {
+    refresh_token_api_v1_auth_refresh_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3311,7 +3373,7 @@ export interface operations {
             };
         };
     };
-    get_current_user_info_auth_me_get: {
+    get_current_user_info_api_v1_auth_me_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3331,7 +3393,91 @@ export interface operations {
             };
         };
     };
-    oauth_google_start_auth_oauth_google_start_get: {
+    verify_email_from_link_api_v1_auth_verify_email_get: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_email_api_v1_auth_verify_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailVerificationTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_verification_email_api_v1_auth_verify_email_resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthMessageResponse"];
+                };
+            };
+        };
+    };
+    oauth_google_start_api_v1_auth_oauth_google_start_get: {
         parameters: {
             query: {
                 redirect_uri: string;
@@ -3362,7 +3508,7 @@ export interface operations {
             };
         };
     };
-    oauth_twitter_start_auth_oauth_twitter_start_get: {
+    oauth_twitter_start_api_v1_auth_oauth_twitter_start_get: {
         parameters: {
             query: {
                 redirect_uri: string;
@@ -3393,7 +3539,7 @@ export interface operations {
             };
         };
     };
-    oauth_google_callback_auth_oauth_google_callback_get: {
+    oauth_google_callback_api_v1_auth_oauth_google_callback_get: {
         parameters: {
             query?: {
                 code?: string | null;
@@ -3426,7 +3572,7 @@ export interface operations {
             };
         };
     };
-    oauth_twitter_callback_auth_oauth_twitter_callback_get: {
+    oauth_twitter_callback_api_v1_auth_oauth_twitter_callback_get: {
         parameters: {
             query?: {
                 code?: string | null;
@@ -3459,7 +3605,7 @@ export interface operations {
             };
         };
     };
-    list_billing_plans_billing_plans_get: {
+    list_billing_plans_api_v1_billing_plans_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3479,7 +3625,7 @@ export interface operations {
             };
         };
     };
-    get_my_billing_status_billing_me_get: {
+    get_my_billing_status_api_v1_billing_me_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3499,7 +3645,7 @@ export interface operations {
             };
         };
     };
-    get_my_usage_billing_usage_get: {
+    get_my_usage_api_v1_billing_usage_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3519,7 +3665,7 @@ export interface operations {
             };
         };
     };
-    create_checkout_session_billing_checkout_session_post: {
+    create_checkout_session_api_v1_billing_checkout_session_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3552,7 +3698,7 @@ export interface operations {
             };
         };
     };
-    create_billing_portal_session_billing_portal_session_post: {
+    create_billing_portal_session_api_v1_billing_portal_session_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3585,7 +3731,7 @@ export interface operations {
             };
         };
     };
-    stripe_webhook_billing_webhooks_stripe_post: {
+    stripe_webhook_api_v1_billing_webhooks_stripe_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3605,7 +3751,7 @@ export interface operations {
             };
         };
     };
-    list_projects_projects__get: {
+    list_projects_api_v1_projects__get: {
         parameters: {
             query?: {
                 page?: number;
@@ -3637,7 +3783,7 @@ export interface operations {
             };
         };
     };
-    create_project_projects__post: {
+    create_project_api_v1_projects__post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3670,7 +3816,7 @@ export interface operations {
             };
         };
     };
-    bootstrap_onboarding_project_projects_onboarding_bootstrap_post: {
+    bootstrap_onboarding_project_api_v1_projects_onboarding_bootstrap_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3703,7 +3849,7 @@ export interface operations {
             };
         };
     };
-    get_project_projects__project_id__get: {
+    get_project_api_v1_projects__project_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3734,7 +3880,7 @@ export interface operations {
             };
         };
     };
-    update_project_projects__project_id__put: {
+    update_project_api_v1_projects__project_id__put: {
         parameters: {
             query?: never;
             header?: never;
@@ -3769,7 +3915,7 @@ export interface operations {
             };
         };
     };
-    delete_project_projects__project_id__delete: {
+    delete_project_api_v1_projects__project_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -3798,7 +3944,7 @@ export interface operations {
             };
         };
     };
-    generate_project_api_key_projects__project_id__api_key_post: {
+    generate_project_api_key_api_v1_projects__project_id__api_key_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3829,7 +3975,7 @@ export interface operations {
             };
         };
     };
-    generate_project_webhook_secret_projects__project_id__webhook_secret_post: {
+    generate_project_webhook_secret_api_v1_projects__project_id__webhook_secret_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3860,7 +4006,7 @@ export interface operations {
             };
         };
     };
-    start_pipeline_pipeline__project_id__start_post: {
+    start_pipeline_api_v1_pipeline__project_id__start_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -3895,7 +4041,7 @@ export interface operations {
             };
         };
     };
-    list_pipeline_runs_pipeline__project_id__runs_get: {
+    list_pipeline_runs_api_v1_pipeline__project_id__runs_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -3928,7 +4074,7 @@ export interface operations {
             };
         };
     };
-    get_pipeline_run_pipeline__project_id__runs__run_id__get: {
+    get_pipeline_run_api_v1_pipeline__project_id__runs__run_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3960,7 +4106,7 @@ export interface operations {
             };
         };
     };
-    get_pipeline_progress_pipeline__project_id__runs__run_id__progress_get: {
+    get_pipeline_progress_api_v1_pipeline__project_id__runs__run_id__progress_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3992,7 +4138,7 @@ export interface operations {
             };
         };
     };
-    list_discovery_snapshots_pipeline__project_id__runs__run_id__discovery_snapshots_get: {
+    list_discovery_snapshots_api_v1_pipeline__project_id__runs__run_id__discovery_snapshots_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4024,7 +4170,7 @@ export interface operations {
             };
         };
     };
-    pause_pipeline_pipeline__project_id__pause_post: {
+    pause_pipeline_api_v1_pipeline__project_id__pause_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4057,41 +4203,7 @@ export interface operations {
             };
         };
     };
-    pause_pipeline_run_pipeline__project_id__runs__run_id__pause_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                run_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    resume_pipeline_pipeline__project_id__resume__run_id__post: {
+    pause_pipeline_run_api_v1_pipeline__project_id__runs__run_id__pause_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4125,7 +4237,41 @@ export interface operations {
             };
         };
     };
-    get_task_status_tasks__task_id__get: {
+    resume_pipeline_api_v1_pipeline__project_id__resume__run_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_task_status_api_v1_tasks__task_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4156,7 +4302,7 @@ export interface operations {
             };
         };
     };
-    list_keywords_keywords__project_id__get: {
+    list_keywords_api_v1_keywords__project_id__get: {
         parameters: {
             query?: {
                 page?: number;
@@ -4196,7 +4342,7 @@ export interface operations {
             };
         };
     };
-    create_keyword_keywords__project_id__post: {
+    create_keyword_api_v1_keywords__project_id__post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4231,7 +4377,7 @@ export interface operations {
             };
         };
     };
-    get_keyword_keywords__project_id___keyword_id__get: {
+    get_keyword_api_v1_keywords__project_id___keyword_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4263,7 +4409,7 @@ export interface operations {
             };
         };
     };
-    update_keyword_keywords__project_id___keyword_id__put: {
+    update_keyword_api_v1_keywords__project_id___keyword_id__put: {
         parameters: {
             query?: never;
             header?: never;
@@ -4299,7 +4445,7 @@ export interface operations {
             };
         };
     };
-    delete_keyword_keywords__project_id___keyword_id__delete: {
+    delete_keyword_api_v1_keywords__project_id___keyword_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -4329,7 +4475,7 @@ export interface operations {
             };
         };
     };
-    bulk_update_keywords_keywords__project_id__bulk_update_post: {
+    bulk_update_keywords_api_v1_keywords__project_id__bulk_update_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4366,7 +4512,7 @@ export interface operations {
             };
         };
     };
-    list_topics_topics__project_id__get: {
+    list_topics_api_v1_topics__project_id__get: {
         parameters: {
             query?: {
                 page?: number;
@@ -4401,7 +4547,7 @@ export interface operations {
             };
         };
     };
-    create_topic_topics__project_id__post: {
+    create_topic_api_v1_topics__project_id__post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4436,7 +4582,7 @@ export interface operations {
             };
         };
     };
-    get_ranked_topics_topics__project_id__ranked_get: {
+    get_ranked_topics_api_v1_topics__project_id__ranked_get: {
         parameters: {
             query?: {
                 limit?: number;
@@ -4469,7 +4615,7 @@ export interface operations {
             };
         };
     };
-    get_topic_hierarchy_topics__project_id__hierarchy_get: {
+    get_topic_hierarchy_api_v1_topics__project_id__hierarchy_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4500,7 +4646,7 @@ export interface operations {
             };
         };
     };
-    get_topic_topics__project_id___topic_id__get: {
+    get_topic_api_v1_topics__project_id___topic_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4532,7 +4678,7 @@ export interface operations {
             };
         };
     };
-    update_topic_topics__project_id___topic_id__put: {
+    update_topic_api_v1_topics__project_id___topic_id__put: {
         parameters: {
             query?: never;
             header?: never;
@@ -4568,7 +4714,7 @@ export interface operations {
             };
         };
     };
-    delete_topic_topics__project_id___topic_id__delete: {
+    delete_topic_api_v1_topics__project_id___topic_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -4598,7 +4744,7 @@ export interface operations {
             };
         };
     };
-    merge_topics_topics__project_id__merge_post: {
+    merge_topics_api_v1_topics__project_id__merge_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4633,7 +4779,7 @@ export interface operations {
             };
         };
     };
-    list_briefs_content__project_id__briefs_get: {
+    list_briefs_api_v1_content__project_id__briefs_get: {
         parameters: {
             query?: {
                 page?: number;
@@ -4668,7 +4814,7 @@ export interface operations {
             };
         };
     };
-    create_brief_content__project_id__briefs_post: {
+    create_brief_api_v1_content__project_id__briefs_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4703,7 +4849,7 @@ export interface operations {
             };
         };
     };
-    get_content_calendar_content__project_id__calendar_get: {
+    get_content_calendar_api_v1_content__project_id__calendar_get: {
         parameters: {
             query?: {
                 /** @description Inclusive lower date bound (YYYY-MM-DD). */
@@ -4739,7 +4885,7 @@ export interface operations {
             };
         };
     };
-    get_brief_content__project_id__briefs__brief_id__get: {
+    get_brief_api_v1_content__project_id__briefs__brief_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4771,7 +4917,7 @@ export interface operations {
             };
         };
     };
-    update_brief_content__project_id__briefs__brief_id__put: {
+    update_brief_api_v1_content__project_id__briefs__brief_id__put: {
         parameters: {
             query?: never;
             header?: never;
@@ -4807,7 +4953,7 @@ export interface operations {
             };
         };
     };
-    delete_brief_content__project_id__briefs__brief_id__delete: {
+    delete_brief_api_v1_content__project_id__briefs__brief_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -4837,7 +4983,7 @@ export interface operations {
             };
         };
     };
-    get_writer_instructions_content__project_id__briefs__brief_id__instructions_get: {
+    get_writer_instructions_api_v1_content__project_id__briefs__brief_id__instructions_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4869,7 +5015,7 @@ export interface operations {
             };
         };
     };
-    list_articles_content__project_id__articles_get: {
+    list_articles_api_v1_content__project_id__articles_get: {
         parameters: {
             query?: {
                 page?: number;
@@ -4904,7 +5050,7 @@ export interface operations {
             };
         };
     };
-    get_article_for_brief_content__project_id__briefs__brief_id__article_get: {
+    get_article_for_brief_api_v1_content__project_id__briefs__brief_id__article_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4936,7 +5082,7 @@ export interface operations {
             };
         };
     };
-    regenerate_article_content__project_id__briefs__brief_id__article_regenerate_post: {
+    regenerate_article_api_v1_content__project_id__briefs__brief_id__article_regenerate_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4972,7 +5118,7 @@ export interface operations {
             };
         };
     };
-    get_article_version_content__project_id__articles__article_id__versions__version_number__get: {
+    get_article_version_api_v1_content__project_id__articles__article_id__versions__version_number__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5005,7 +5151,7 @@ export interface operations {
             };
         };
     };
-    get_brand_visual_context_brand__project_id__visual_context_get: {
+    get_brand_visual_context_api_v1_brand__project_id__visual_context_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5036,7 +5182,7 @@ export interface operations {
             };
         };
     };
-    ingest_brand_assets_brand__project_id__assets_ingest_post: {
+    ingest_brand_assets_api_v1_brand__project_id__assets_ingest_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5071,7 +5217,7 @@ export interface operations {
             };
         };
     };
-    get_brand_asset_signed_read_url_brand__project_id__assets__asset_id__signed_read_url_post: {
+    get_brand_asset_signed_read_url_api_v1_brand__project_id__assets__asset_id__signed_read_url_post: {
         parameters: {
             query?: {
                 ttl_seconds?: number | null;
@@ -5105,7 +5251,7 @@ export interface operations {
             };
         };
     };
-    patch_brand_visual_style_brand__project_id__visual_style_patch: {
+    patch_brand_visual_style_api_v1_brand__project_id__visual_style_patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -5140,7 +5286,7 @@ export interface operations {
             };
         };
     };
-    list_authors_authors__project_id__get: {
+    list_authors_api_v1_authors__project_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5171,7 +5317,7 @@ export interface operations {
             };
         };
     };
-    create_author_authors__project_id__post: {
+    create_author_api_v1_authors__project_id__post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5206,7 +5352,7 @@ export interface operations {
             };
         };
     };
-    get_author_authors__project_id___author_id__get: {
+    get_author_api_v1_authors__project_id___author_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5238,7 +5384,7 @@ export interface operations {
             };
         };
     };
-    delete_author_authors__project_id___author_id__delete: {
+    delete_author_api_v1_authors__project_id___author_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -5268,7 +5414,7 @@ export interface operations {
             };
         };
     };
-    update_author_authors__project_id___author_id__patch: {
+    update_author_api_v1_authors__project_id___author_id__patch: {
         parameters: {
             query?: never;
             header?: never;

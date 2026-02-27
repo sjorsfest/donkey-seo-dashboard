@@ -4,6 +4,7 @@ import {
   Link,
   Outlet,
   data,
+  redirect,
   useLoaderData,
   useLocation,
 } from "react-router";
@@ -133,6 +134,11 @@ function getProjectSwitchTarget(pathname: string, projectId: string) {
 export async function loader({ request }: Route.LoaderArgs) {
   const api = new ApiClient(request);
   const user = await api.requireUser();
+  if (!user.email_verified) {
+    return redirect("/verify-email/pending", {
+      headers: await api.commit(),
+    });
+  }
 
   const url = new URL(request.url);
   const urlProjectId = getProjectIdFromPath(url.pathname);
