@@ -110,7 +110,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function Register() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
-  const isLoading = navigation.state === "submitting";
+  const isLoading = navigation.state !== "idle";
 
   return (
     <div className="w-full max-w-md mx-auto">

@@ -133,9 +133,9 @@ export default function Login() {
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const activeIntent = String(navigation.formData?.get("intent") ?? "");
-  const isLoading = navigation.state === "submitting" && activeIntent !== "oauth:google" && activeIntent !== "oauth:twitter";
-  const isGoogleLoading = navigation.state === "submitting" && activeIntent === "oauth:google";
-  const isTwitterLoading = navigation.state === "submitting" && activeIntent === "oauth:twitter";
+  const isLoading = navigation.state !== "idle" && activeIntent !== "oauth:google" && activeIntent !== "oauth:twitter";
+  const isGoogleLoading = navigation.state !== "idle" && activeIntent === "oauth:google";
+  const isTwitterLoading = navigation.state !== "idle" && activeIntent === "oauth:twitter";
 
   return (
     <div className="w-full max-w-md mx-auto">
@@ -162,7 +162,7 @@ export default function Login() {
               type="submit"
               name="intent"
               value="oauth:google"
-              disabled={navigation.state === "submitting"}
+              disabled={navigation.state !== "idle"}
               className="w-full h-11 rounded-xl border-2 border-slate-900/10 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 hover:translate-y-[-1px] hover:shadow-[3px_3px_0_rgba(0,0,0,0.08)] transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4">
@@ -178,7 +178,7 @@ export default function Login() {
               type="submit"
               name="intent"
               value="oauth:twitter"
-              disabled={navigation.state === "submitting"}
+              disabled={navigation.state !== "idle"}
               className="w-full h-11 rounded-xl border-2 border-slate-900/10 bg-white text-slate-700 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-slate-50 hover:translate-y-[-1px] hover:shadow-[3px_3px_0_rgba(0,0,0,0.08)] transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true" className="w-4 h-4 fill-current">

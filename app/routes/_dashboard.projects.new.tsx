@@ -725,7 +725,7 @@ export default function ProjectSetupRoute() {
 
   const derivedLocale = useMemo(() => countryToLocale(country), [country]);
 
-  const isSubmitting = navigation.state === "submitting";
+  const isSubmitting = navigation.state !== "idle";
   const domainIsValid = isValidDomain(domain);
   const inlineDomainError = domain.length > 0 && !domainIsValid ? "Enter a valid domain (e.g. example.com)." : null;
   const domainError = domainIsValid ? null : actionData?.fieldErrors?.domain ?? inlineDomainError;

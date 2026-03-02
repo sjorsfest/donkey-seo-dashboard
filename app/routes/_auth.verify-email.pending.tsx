@@ -164,8 +164,8 @@ export default function VerifyEmailPending() {
   }, [poller]);
 
   const activeIntent = String(navigation.formData?.get("intent") ?? "");
-  const isResending = navigation.state === "submitting" && activeIntent === "resend";
-  const isChecking = navigation.state === "submitting" && activeIntent === "check";
+  const isResending = navigation.state !== "idle" && activeIntent === "resend";
+  const isChecking = navigation.state !== "idle" && activeIntent === "check";
 
   const resendSucceeded = actionData?.intent === "resend" && actionData.ok;
   const wasPolled = Boolean(actionData && "polled" in actionData && actionData.polled === true);

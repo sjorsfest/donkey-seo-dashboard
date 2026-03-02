@@ -351,11 +351,11 @@ export default function DashboardSettingsRoute() {
   const generatedKey = actionData?.generatedKey ?? null;
   const generatedWebhookSecret = actionData?.generatedWebhookSecret ?? null;
   const isGenerating =
-    navigation.state === "submitting" && navigation.formData?.get("intent")?.toString() === "generate_api_key";
+    navigation.state !== "idle" && navigation.formData?.get("intent")?.toString() === "generate_api_key";
   const isGeneratingWebhook =
-    navigation.state === "submitting" && navigation.formData?.get("intent")?.toString() === "generate_webhook_secret";
+    navigation.state !== "idle" && navigation.formData?.get("intent")?.toString() === "generate_webhook_secret";
   const isSavingWebhook =
-    navigation.state === "submitting" && navigation.formData?.get("intent")?.toString() === "save_webhook_url";
+    navigation.state !== "idle" && navigation.formData?.get("intent")?.toString() === "save_webhook_url";
   const hasProjects = projects.length > 0;
 
   const hasWebhook = !!projectSettings?.notification_webhook;
