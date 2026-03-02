@@ -628,7 +628,7 @@ export default function ProjectCreationRunRoute() {
       </Card>
 
       {/* Topic-grouped content */}
-      {briefs.length > 0 ? (
+      {briefs.length > 0 && (
         <section className="space-y-4">
           <div>
             <h2 className="font-display text-xl font-bold text-slate-900">Topics &amp; Articles for this run</h2>
@@ -648,16 +648,6 @@ export default function ProjectCreationRunRoute() {
             />
           ))}
         </section>
-      ) : (
-        <Card>
-          <CardContent className="pt-5">
-            <p className="text-sm text-slate-500">
-              {runIsActive
-                ? "Briefs are being generated. They will appear here as the pipeline progresses."
-                : "No briefs were generated for this run."}
-            </p>
-          </CardContent>
-        </Card>
       )}
     </div>
   );

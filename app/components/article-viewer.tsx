@@ -1,7 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { Skeleton } from "~/components/ui/skeleton";
-import { ExternalLink, FileX } from "lucide-react";
+import { ExternalLink, FileX, User } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Types (mirrors the backend modular_document contract)
@@ -23,8 +23,49 @@ type DocumentBlock = {
   links?: BlockLink[];
 };
 
+type ImageMetadata = {
+  object_key?: string;
+  mime_type?: string;
+  width?: number;
+  height?: number;
+  byte_size?: number;
+  sha256?: string;
+  signed_url?: string;
+  title_text?: string;
+  template_version?: string;
+  source?: string;
+  style_variant_id?: string;
+};
+
+type Author = {
+  id?: string;
+  name?: string;
+  bio?: string;
+  social_urls?: {
+    linkedin?: string;
+    x?: string;
+  };
+  basic_info?: {
+    title?: string;
+    location?: string;
+  };
+  profile_image?: ImageMetadata;
+};
+
 type ModularDocument = {
-  seo_meta?: { h1?: string };
+  seo_meta?: {
+    h1?: string;
+    meta_title?: string;
+    meta_description?: string;
+    slug?: string;
+    primary_keyword?: string;
+  };
+  conversion_plan?: {
+    primary_intent?: string;
+    cta_strategy?: string[];
+  };
+  author?: Author;
+  featured_image?: ImageMetadata;
   blocks?: DocumentBlock[];
 };
 
@@ -46,6 +87,18 @@ function parseDocument(raw: Record<string, unknown>): ModularDocument {
     seo_meta:
       typeof raw.seo_meta === "object" && raw.seo_meta !== null
         ? (raw.seo_meta as ModularDocument["seo_meta"])
+        : undefined,
+    conversion_plan:
+      typeof raw.conversion_plan === "object" && raw.conversion_plan !== null
+        ? (raw.conversion_plan as ModularDocument["conversion_plan"])
+        : undefined,
+    author:
+      typeof raw.author === "object" && raw.author !== null
+        ? (raw.author as ModularDocument["author"])
+        : undefined,
+    featured_image:
+      typeof raw.featured_image === "object" && raw.featured_image !== null
+        ? (raw.featured_image as ModularDocument["featured_image"])
         : undefined,
     blocks: safeArray<DocumentBlock>(raw.blocks),
   };
@@ -492,7 +545,7 @@ function CtaBlockView({ block }: { block: DocumentBlock }) {
   const ctaHref = safeString(cta.href) || "#";
 
   return (
-    <aside className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 px-8 py-9 text-center md:px-12">
+    <aside className="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 px-8 py-9 text-center md:px-12">
       {heading ? (
         <h2 className="font-display text-lg font-bold text-white md:text-xl">{heading}</h2>
       ) : null}
@@ -500,8 +553,8 @@ function CtaBlockView({ block }: { block: DocumentBlock }) {
         <MarkdownContent
           content={body}
           className={cn(heading && "mt-3")}
-          paragraphClassName="mx-auto max-w-2xl text-[14px] leading-[1.7] text-slate-300"
-          codeClassName="mx-auto max-w-2xl bg-slate-950"
+          paragraphClassName="mx-auto max-w-2xl text-[14px] leading-[1.7] text-blue-50"
+          codeClassName="mx-auto max-w-2xl bg-blue-950"
         />
       ) : null}
       <a
@@ -509,7 +562,7 @@ function CtaBlockView({ block }: { block: DocumentBlock }) {
         target="_blank"
         rel="noopener noreferrer"
         className={cn(
-          "inline-block rounded-lg border border-white/20 bg-white px-6 py-2.5 text-sm font-semibold text-slate-800 shadow-sm transition-all hover:bg-slate-50 hover:shadow-md",
+          "inline-block rounded-lg bg-white px-6 py-2.5 text-sm font-semibold text-blue-600 shadow-sm transition-all hover:bg-blue-50 hover:shadow-md",
           heading || body ? "mt-5" : "",
         )}
       >
@@ -650,9 +703,16 @@ function ArticleBlock({
 // ---------------------------------------------------------------------------
 
 export function ArticleViewer({ document }: { document: Record<string, unknown> }) {
-  const { seo_meta, blocks } = parseDocument(document);
+  const { seo_meta, author, featured_image, blocks } = parseDocument(document);
   const safeBlocks = safeArray<DocumentBlock>(blocks);
   const h1Text = safeString(seo_meta?.h1);
+  const featuredImageUrl = safeString(featured_image?.signed_url);
+  const featuredImageTitle = safeString(featured_image?.title_text);
+  const authorName = safeString(author?.name);
+  const authorBio = safeString(author?.bio);
+  const authorTitle = safeString(author?.basic_info?.title);
+  const authorLocation = safeString(author?.basic_info?.location);
+  const authorProfileImage = safeString(author?.profile_image?.signed_url);
 
   return (
     <article className="mx-auto max-w-[56rem] space-y-8 py-1 sm:py-2 lg:space-y-9">
@@ -661,6 +721,54 @@ export function ArticleViewer({ document }: { document: Record<string, unknown> 
           {h1Text}
         </h1>
       ) : null}
+
+      {/* Author byline */}
+      {authorName ? (
+        <div className="flex items-center gap-4 border-b border-slate-100 pb-6">
+          {authorProfileImage ? (
+            <img
+              src={authorProfileImage}
+              alt={authorName}
+              className="h-14 w-14 rounded-full object-cover ring-2 ring-slate-100"
+            />
+          ) : (
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+              <User className="h-6 w-6" />
+            </div>
+          )}
+          <div className="flex-1">
+            <div className="flex items-baseline gap-2">
+              <span className="font-semibold text-slate-900">{authorName}</span>
+              {authorTitle ? (
+                <span className="text-sm text-slate-500">· {authorTitle}</span>
+              ) : null}
+              {authorLocation ? (
+                <span className="text-sm text-slate-500">· {authorLocation}</span>
+              ) : null}
+            </div>
+            {authorBio ? (
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">{authorBio}</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Featured image */}
+      {featuredImageUrl ? (
+        <div className="overflow-hidden rounded-2xl">
+          <img
+            src={featuredImageUrl}
+            alt={featuredImageTitle || h1Text || "Article featured image"}
+            className="w-full object-cover"
+            style={{
+              aspectRatio: featured_image?.width && featured_image?.height
+                ? `${featured_image.width} / ${featured_image.height}`
+                : "16 / 9"
+            }}
+          />
+        </div>
+      ) : null}
+
       {safeBlocks.map((block, index) => (
         <ArticleBlock
           key={index}

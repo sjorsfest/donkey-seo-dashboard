@@ -36,7 +36,7 @@ export function OnboardingOverlay({
     };
 
     el.style.position = "relative";
-    el.style.zIndex = "61";
+    el.style.zIndex = "70";
     el.style.borderRadius = "1rem";
 
     return () => {
@@ -61,7 +61,7 @@ export function OnboardingOverlay({
           initial={{ opacity: 0, y: 12, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.35, delay: 0.1 }}
-          className={`w-full max-w-lg ${focusSelector ? "z-[62]" : ""}`}
+          className={`w-full max-w-lg ${focusSelector ? "z-[71]" : ""}`}
         >
           {children}
 

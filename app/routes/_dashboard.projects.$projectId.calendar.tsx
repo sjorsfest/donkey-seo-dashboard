@@ -380,7 +380,7 @@ export default function ProjectCalendarRoute() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Link to={`/projects/${project.id}/creation`}>
-              <Button variant="outline">Open creation</Button>
+              <Button variant="outline">View content</Button>
             </Link>
             <Link to="/project">
               <Button variant="outline">Back to project</Button>

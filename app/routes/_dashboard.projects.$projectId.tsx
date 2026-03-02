@@ -210,14 +210,11 @@ export default function ProjectDetailsRoute() {
           </span>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link to="/project" className="inline-flex">
-            <Button variant="outline">Back to project</Button>
-          </Link>
           <Link to={`/projects/${project.id}/discovery`} className="inline-flex">
-            <Button variant="outline">Open discovery</Button>
+            <Button variant="outline">View discovery</Button>
           </Link>
           <Link to={`/projects/${project.id}/creation`} className="inline-flex">
-            <Button variant="outline">Open creation</Button>
+            <Button variant="outline">View content</Button>
           </Link>
         </div>
       </section>

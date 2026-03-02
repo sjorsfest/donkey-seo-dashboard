@@ -9,6 +9,11 @@ import { useOnboarding } from "~/components/onboarding/onboarding-context";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
+  formatArticleLimitReachedMessage,
+  isArticleLimitReached,
+  isFreeTierUsage,
+} from "~/lib/billing-usage";
+import {
   calculateOverallProgress,
   formatDateTime,
   formatStepName,
@@ -34,6 +39,7 @@ type KeywordListResponse = components["schemas"]["KeywordListResponse"];
 type TopicListResponse = components["schemas"]["TopicListResponse"];
 type TopicResponse = components["schemas"]["TopicResponse"];
 type DiscoveryTopicSnapshotResponse = components["schemas"]["DiscoveryTopicSnapshotResponse"];
+type BillingUsageResponse = components["schemas"]["BillingUsageResponse"];
 
 type SnapshotStats = {
   iterationCount: number;
@@ -50,6 +56,7 @@ type LoaderData = {
   topicTotal: number;
   rankedTopicCount: number;
   snapshotStats: SnapshotStats;
+  usage: BillingUsageResponse | null;
 };
 
 type ActionData = {
@@ -102,13 +109,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const rawRuns = sortPipelineRunsNewest(runsResult.ok && runsResult.data ? runsResult.data : []);
   const preferred = pickLatestRunForModule(rawRuns, "discovery");
 
-  const [keywordsResult, topicsResult, rankedTopicsResult] = await Promise.all([
+  const [keywordsResult, topicsResult, rankedTopicsResult, usageResult] = await Promise.all([
     fetchJson<KeywordListResponse>(api, `/keywords/${projectId}?page=1&page_size=1`),
     fetchJson<TopicListResponse>(api, `/topics/${projectId}?page=1&page_size=1&eligibility=all`),
     fetchJson<TopicResponse[]>(api, `/topics/${projectId}/ranked?limit=30`),
+    fetchJson<BillingUsageResponse>(api, "/billing/usage"),
   ]);
 
-  if (keywordsResult.unauthorized || topicsResult.unauthorized || rankedTopicsResult.unauthorized) {
+  if (keywordsResult.unauthorized || topicsResult.unauthorized || rankedTopicsResult.unauthorized || usageResult.unauthorized) {
     return handleUnauthorized(api);
   }
 
@@ -153,6 +161,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       topicTotal: topicsResult.ok && topicsResult.data ? topicsResult.data.total : 0,
       rankedTopicCount: rankedTopicsResult.ok && rankedTopicsResult.data ? rankedTopicsResult.data.length : 0,
       snapshotStats,
+      usage: usageResult.ok && usageResult.data ? usageResult.data : null,
     } satisfies LoaderData,
     {
       headers: await api.commit(),
@@ -225,6 +234,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
   }
 
+  const usageResult = await fetchJson<BillingUsageResponse>(api, "/billing/usage");
+  if (usageResult.unauthorized) return handleUnauthorized(api);
+  if (usageResult.ok && usageResult.data && isArticleLimitReached(usageResult.data)) {
+    return data(
+      { error: formatArticleLimitReachedMessage(usageResult.data) } satisfies ActionData,
+      { status: 409, headers: await api.commit() }
+    );
+  }
+
   const resumeResponse = await api.fetch(`/pipeline/${projectId}/resume/${runId}`, {
     method: "POST",
   });
@@ -264,6 +282,11 @@ type StepExecution = components["schemas"]["StepExecutionResponse"];
 
 const SUCCESS_STEP = new Set(["completed", "success", "succeeded", "done"]);
 
+function normalizeStepName(name: string): string {
+  // Normalize step names for comparison (remove underscores, lowercase, take first word)
+  return name.toLowerCase().replace(/[_-]/g, " ").split(" ")[0];
+}
+
 function getStepState(
   step: (typeof DISCOVERY_STEPS)[number],
   currentStepName: string | null,
@@ -273,14 +296,19 @@ function getStepState(
   const exec = executions.find((e) => e.step_number === step.number);
 
   // Check if this step is currently running based on the step name
-  if (isActive && currentStepName && step.label.toLowerCase() === currentStepName.toLowerCase()) {
-    return "running";
+  if (isActive && currentStepName) {
+    const normalizedCurrent = normalizeStepName(currentStepName);
+    const normalizedLabel = normalizeStepName(step.label);
+    if (normalizedCurrent === normalizedLabel) {
+      return "running";
+    }
   }
 
   // If the pipeline is active and we have a current step, mark steps after it as idle
   if (isActive && currentStepName) {
+    const normalizedCurrent = normalizeStepName(currentStepName);
     const currentStepIndex = DISCOVERY_STEPS.findIndex(
-      (s) => s.label.toLowerCase() === currentStepName.toLowerCase()
+      (s) => normalizeStepName(s.label) === normalizedCurrent
     );
     const thisStepIndex = DISCOVERY_STEPS.findIndex((s) => s.number === step.number);
 
@@ -364,6 +392,7 @@ export default function ProjectDiscoveryHubRoute() {
     topicTotal,
     rankedTopicCount,
     snapshotStats,
+    usage,
   } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const revalidator = useRevalidator();
@@ -376,6 +405,10 @@ export default function ProjectDiscoveryHubRoute() {
 
   const liveProgress = progressFetcher.data ?? latestRunProgress;
   const effectiveStatus = liveProgress?.status ?? latestRun?.status ?? null;
+  const isAtArticleLimit = isArticleLimitReached(usage);
+  const isFreeTier = isFreeTierUsage(usage);
+  const showUpgradeOnly = isAtArticleLimit && isFreeTier;
+  const articleLimitMessage = isAtArticleLimit ? formatArticleLimitReachedMessage(usage) : null;
 
   // Advance onboarding once discovery is opened after setup.
   useEffect(() => {
@@ -424,7 +457,7 @@ export default function ProjectDiscoveryHubRoute() {
           </div>
           <div className="flex items-center gap-2">
             <Link to={`/projects/${project.id}/creation`}>
-              <Button variant="outline">Creation phase</Button>
+              <Button variant="outline">View content</Button>
             </Link>
             <Link to="/project">
               <Button variant="outline">Back to project</Button>
@@ -439,6 +472,11 @@ export default function ProjectDiscoveryHubRoute() {
       {actionData?.error ? (
         <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
           {actionData.error}
+        </p>
+      ) : null}
+      {articleLimitMessage ? (
+        <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+          {articleLimitMessage}
         </p>
       ) : null}
 
@@ -465,24 +503,32 @@ export default function ProjectDiscoveryHubRoute() {
               </div>
 
               <div className="flex items-center gap-2">
-                <Form method="post">
-                  <input type="hidden" name="intent" value="pausePipeline" />
-                  <input type="hidden" name="run_id" value={latestRun.id} />
-                  <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
-                    Pause
-                  </Button>
-                </Form>
-                <Form method="post">
-                  <input type="hidden" name="intent" value="resumePipeline" />
-                  <input type="hidden" name="run_id" value={latestRun.id} />
-                  <Button
-                    type="submit"
-                    variant="outline"
-                    disabled={!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)}
-                  >
-                    Resume
-                  </Button>
-                </Form>
+                {showUpgradeOnly ? (
+                  <Link to="/billing">
+                    <Button>Upgrade</Button>
+                  </Link>
+                ) : (
+                  <>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="pausePipeline" />
+                      <input type="hidden" name="run_id" value={latestRun.id} />
+                      <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
+                        Pause
+                      </Button>
+                    </Form>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="resumePipeline" />
+                      <input type="hidden" name="run_id" value={latestRun.id} />
+                      <Button
+                        type="submit"
+                        variant="outline"
+                        disabled={(!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)) || isAtArticleLimit}
+                      >
+                        Resume
+                      </Button>
+                    </Form>
+                  </>
+                )}
               </div>
             </div>
 

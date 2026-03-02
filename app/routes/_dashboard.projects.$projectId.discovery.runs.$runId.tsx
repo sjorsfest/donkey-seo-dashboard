@@ -22,6 +22,11 @@ import { Progress } from "~/components/ui/progress";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
+  formatArticleLimitReachedMessage,
+  isArticleLimitReached,
+  isFreeTierUsage,
+} from "~/lib/billing-usage";
+import {
   calculateOverallProgress,
   formatDateTime,
   formatStatusLabel,
@@ -48,6 +53,7 @@ type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
 type PipelineProgressResponse = components["schemas"]["PipelineProgressResponse"];
 type StepExecutionResponse = components["schemas"]["StepExecutionResponse"];
 type DiscoveryTopicSnapshotResponse = components["schemas"]["DiscoveryTopicSnapshotResponse"];
+type BillingUsageResponse = components["schemas"]["BillingUsageResponse"];
 
 type IterationSnapshotStats = { accepted: number; rejected: number; total: number };
 
@@ -57,6 +63,7 @@ type LoaderData = {
   progress: PipelineProgressResponse | null;
   stepFocus: number | null;
   snapshotsByIteration: Record<number, IterationSnapshotStats>;
+  usage: BillingUsageResponse | null;
 };
 
 type ActionData = {
@@ -149,12 +156,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const selectedRunId = preferredDiscoveryRun.id;
-  const [selectedRunResult, snapshotsResult] = await Promise.all([
+  const [selectedRunResult, snapshotsResult, usageResult] = await Promise.all([
     fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${selectedRunId}`),
     fetchJson<DiscoveryTopicSnapshotResponse[]>(api, `/pipeline/${projectId}/runs/${selectedRunId}/discovery-snapshots`),
+    fetchJson<BillingUsageResponse>(api, "/billing/usage"),
   ]);
   if (selectedRunResult.unauthorized) return handleUnauthorized(api);
   if (snapshotsResult.unauthorized) return handleUnauthorized(api);
+  if (usageResult.unauthorized) return handleUnauthorized(api);
 
   if (!selectedRunResult.ok || !selectedRunResult.data) {
     throw new Response("Failed to load selected run.", { status: selectedRunResult.status });
@@ -198,6 +207,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       progress,
       stepFocus: stepFocusParsed.stepFocus,
       snapshotsByIteration,
+      usage: usageResult.ok && usageResult.data ? usageResult.data : null,
     } satisfies LoaderData,
     {
       headers: await api.commit(),
@@ -262,6 +272,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(canonicalUrl, {
       headers: await api.commit(),
     });
+  }
+
+  const usageResult = await fetchJson<BillingUsageResponse>(api, "/billing/usage");
+  if (usageResult.unauthorized) return handleUnauthorized(api);
+  if (usageResult.ok && usageResult.data && isArticleLimitReached(usageResult.data)) {
+    return data(
+      { error: formatArticleLimitReachedMessage(usageResult.data) } satisfies ActionData,
+      { status: 409, headers: await api.commit() }
+    );
   }
 
   const resumeResponse = await api.fetch(`/pipeline/${projectId}/resume/${runId}`, {
@@ -512,6 +531,7 @@ export default function ProjectDiscoveryRunRoute() {
     progress,
     stepFocus,
     snapshotsByIteration,
+    usage,
   } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const revalidator = useRevalidator();
@@ -533,6 +553,10 @@ export default function ProjectDiscoveryRunRoute() {
   const liveProgress = progressFetcher.data ?? progress;
   const effectiveStatus = liveProgress?.status ?? selectedRun.status;
   const stepExecutions = (liveProgress?.steps ?? selectedRun.step_executions ?? []) as StepExecutionResponse[];
+  const isAtArticleLimit = isArticleLimitReached(usage);
+  const isFreeTier = isFreeTierUsage(usage);
+  const showUpgradeOnly = isAtArticleLimit && isFreeTier;
+  const articleLimitMessage = isAtArticleLimit ? formatArticleLimitReachedMessage(usage) : null;
 
   useEffect(() => {
     isProgressRequestInFlightRef.current = progressFetcher.state !== "idle";
@@ -620,20 +644,32 @@ export default function ProjectDiscoveryRunRoute() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Form method="post">
-              <input type="hidden" name="intent" value="pausePipeline" />
-              <input type="hidden" name="run_id" value={selectedRun.id} />
-              <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
-                Pause
-              </Button>
-            </Form>
-            <Form method="post">
-              <input type="hidden" name="intent" value="resumePipeline" />
-              <input type="hidden" name="run_id" value={selectedRun.id} />
-              <Button type="submit" variant="outline" disabled={!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)}>
-                Resume
-              </Button>
-            </Form>
+            {showUpgradeOnly ? (
+              <Link to="/billing">
+                <Button>Upgrade</Button>
+              </Link>
+            ) : (
+              <>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="pausePipeline" />
+                  <input type="hidden" name="run_id" value={selectedRun.id} />
+                  <Button type="submit" variant="outline" disabled={!isRunActive(effectiveStatus)}>
+                    Pause
+                  </Button>
+                </Form>
+                <Form method="post">
+                  <input type="hidden" name="intent" value="resumePipeline" />
+                  <input type="hidden" name="run_id" value={selectedRun.id} />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    disabled={(!isRunPaused(effectiveStatus) && !isRunFailed(effectiveStatus)) || isAtArticleLimit}
+                  >
+                    Resume
+                  </Button>
+                </Form>
+              </>
+            )}
             <Link to={`/projects/${project.id}/discovery`}>
               <Button variant="outline">Back to overview</Button>
             </Link>
@@ -655,6 +691,11 @@ export default function ProjectDiscoveryRunRoute() {
       {actionData?.error ? (
         <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
           {actionData.error}
+        </p>
+      ) : null}
+      {articleLimitMessage ? (
+        <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+          {articleLimitMessage}
         </p>
       ) : null}
 
