@@ -31,7 +31,6 @@ type LoaderData = {
 type ActionData = {
   error?: string;
   success?: string;
-  guideContent?: string;
   generatedKey?: ProjectApiKeyResponse;
   generatedWebhookSecret?: ProjectWebhookSecretResponse;
   webhookSaved?: boolean;
@@ -139,56 +138,6 @@ export async function action({ request }: { request: Request }) {
   const api = new ApiClient(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
-
-  if (intent === "fetch_integration_guide") {
-    let response: Response;
-
-    try {
-      response = await api.fetch(INTEGRATION_GUIDE_PATH);
-    } catch {
-      return data(
-        {
-          error: "Unable to contact the API right now. Please try again.",
-        } satisfies ActionData,
-        {
-          status: 502,
-          headers: await api.commit(),
-        }
-      );
-    }
-
-    if (response.status === 401) {
-      return redirect("/login", {
-        headers: {
-          "Set-Cookie": await api.logout(),
-        },
-      });
-    }
-
-    if (!response.ok) {
-      const apiMessage = await readApiErrorMessage(response);
-      return data(
-        {
-          error: apiMessage ?? "Unable to load the integration guide right now.",
-        } satisfies ActionData,
-        {
-          status: response.status,
-          headers: await api.commit(),
-        }
-      );
-    }
-
-    const guideContent = await response.text();
-
-    return data(
-      {
-        guideContent,
-      } satisfies ActionData,
-      {
-        headers: await api.commit(),
-      }
-    );
-  }
 
   const projectId = String(formData.get("projectId") ?? "").trim();
   if (!projectId) {
@@ -406,7 +355,7 @@ export default function DashboardSettingsRoute() {
   const [activeTab, setActiveTab] = useState<SettingsTab>(onboardingTab ?? "overview");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [webhookCopyState, setWebhookCopyState] = useState<"idle" | "copied" | "error">("idle");
-  const [guideCopyState, setGuideCopyState] = useState<"idle" | "loading" | "copied" | "error">("idle");
+  const [guideCopyState, setGuideCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [guidePreviewContent, setGuidePreviewContent] = useState(guideContent);
   const [guideExpanded, setGuideExpanded] = useState(false);
 
@@ -468,26 +417,13 @@ export default function DashboardSettingsRoute() {
   };
 
   const handleCopyGuide = async () => {
-    setGuideCopyState("loading");
+    if (!guidePreviewContent) {
+      setGuideCopyState("error");
+      return;
+    }
 
     try {
-      const response = await fetch(`${window.location.pathname}${window.location.search}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body: new URLSearchParams({
-          intent: "fetch_integration_guide",
-        }),
-      });
-
-      const payload = (await response.json()) as ActionData;
-      if (!response.ok || !payload.guideContent) {
-        throw new Error(payload.error ?? "Failed to load integration guide.");
-      }
-
-      await navigator.clipboard.writeText(payload.guideContent);
-      setGuidePreviewContent(payload.guideContent);
+      await navigator.clipboard.writeText(guidePreviewContent);
       setGuideCopyState("copied");
       setTimeout(() => setGuideCopyState("idle"), 3000);
     } catch {
@@ -504,19 +440,23 @@ export default function DashboardSettingsRoute() {
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.22 }}
-        className="rounded-3xl border-2 border-black bg-gradient-to-r from-[#eef5ff] to-[#f4fbf8] p-6 shadow-[4px_4px_0_#1a1a1a]"
+        className="rounded-3xl border border-slate-200 bg-gradient-to-r from-white via-[#eef5ff] to-[#f4fbf8] p-6 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.55)]"
       >
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="info">Project Credentials</Badge>
-          <Badge variant={hasWebhook ? "success" : "muted"}>
-            {hasWebhook ? "✓ Webhook" : "Webhook"}
-          </Badge>
-          {activeProject && <Badge variant="muted">Active: {activeProject.name}</Badge>}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4f5f9d]">Project Credentials</p>
+              <Badge variant={hasWebhook ? "success" : "muted"} className="text-[10px]">
+                {hasWebhook ? "✓ Webhook" : "Webhook"}
+              </Badge>
+              {activeProject && <Badge variant="muted" className="text-[10px]">Active: {activeProject.name}</Badge>}
+            </div>
+            <h1 className="mt-2 font-display text-3xl font-bold text-slate-900">Settings</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Manage your project integration credentials, webhook configuration, and access the AI agent integration guide.
+            </p>
+          </div>
         </div>
-        <h1 className="mt-3 font-display text-3xl font-bold tracking-tight text-slate-900">Settings</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-slate-600">
-          Manage your project integration credentials, webhook configuration, and access the AI agent integration guide.
-        </p>
       </motion.section>
 
       {/* Error/Success Messages */}
@@ -1024,18 +964,13 @@ const isValid = hmac === signatureHeader;`}</code>
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <Button
                       data-onboarding-focus="settings-ai-guide-copy"
                       onClick={handleCopyGuide}
-                      disabled={guideCopyState === "loading"}
+                      disabled={!guidePreviewContent}
                     >
-                      {guideCopyState === "loading" ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Copying Guide...
-                        </>
-                      ) : guideCopyState === "copied" ? (
+                      {guideCopyState === "copied" ? (
                         <>
                           <Check className="mr-2 h-4 w-4" />
                           Copied agent instructions. Paste in your agent.
@@ -1056,8 +991,8 @@ const isValid = hmac === signatureHeader;`}</code>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Open API Documentation
                     </a>
-                    {guideCopyState === "error" && <p className="text-xs text-rose-700">Copy failed. Try again.</p>}
                   </div>
+                  {guideCopyState === "error" && <p className="text-xs text-rose-700">Copy failed. Try again.</p>}
 
                   <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
                     <p className="font-semibold">How to use this guide:</p>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useLocation, useNavigate, useNavigation } from "react-router";
 import { AnimatePresence, motion } from "framer-motion";
+import { Loader2 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { DonkeyBubble } from "./donkey-bubble";
 
@@ -15,6 +16,8 @@ type NavStep = {
 };
 
 const DISCOVERY_TARGET = "__DISCOVERY__";
+const ELEMENT_STEP_WIDTH = 680;
+const OVERLAY_MARGIN = 16;
 
 const NAV_STEPS: NavStep[] = [
   {
@@ -141,9 +144,12 @@ export function NavExplainerOverlay({
   onComplete,
 }: NavExplainerOverlayProps) {
   const navigate = useNavigate();
+  const navigation = useNavigation();
   const location = useLocation();
   const [stepIndex, setStepIndex] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [targetReady, setTargetReady] = useState(false);
+  const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const step = NAV_STEPS[stepIndex];
   const isLast = stepIndex === NAV_STEPS.length - 1;
 
@@ -182,10 +188,17 @@ export function NavExplainerOverlay({
     navigateIfNeeded(currentStep.navigateTo);
   }, [stepIndex, discoveryPath, location.pathname, location.search]);
 
+  useEffect(() => {
+    setTargetRect(null);
+    setTargetReady(step?.highlight === "nav");
+  }, [step?.id, step?.highlight]);
+
   // Highlight the current focus target
   useEffect(() => {
     if (!step?.focusSelector) return;
     let timeoutId: number | undefined;
+    let rectRafId: number | undefined;
+    let resizeObserver: ResizeObserver | null = null;
     let highlightedElement: HTMLElement | null = null;
     let previousStyles:
       | {
@@ -198,7 +211,19 @@ export function NavExplainerOverlay({
       | null = null;
     let canceled = false;
     let attempts = 0;
-    const maxAttempts = 30;
+    const maxAttempts = 150;
+
+    const updateRect = () => {
+      if (!highlightedElement) return;
+      setTargetRect(highlightedElement.getBoundingClientRect());
+    };
+
+    const scheduleRectUpdate = () => {
+      if (typeof rectRafId !== "undefined") {
+        window.cancelAnimationFrame(rectRafId);
+      }
+      rectRafId = window.requestAnimationFrame(updateRect);
+    };
 
     const tryHighlight = () => {
       if (canceled) return;
@@ -212,6 +237,7 @@ export function NavExplainerOverlay({
       }
 
       highlightedElement = el;
+      setTargetReady(true);
       previousStyles = {
         position: el.style.position,
         zIndex: el.style.zIndex,
@@ -221,12 +247,20 @@ export function NavExplainerOverlay({
       };
 
       el.style.position = "relative";
-      el.style.zIndex = "61";
+      el.style.zIndex = step.highlight === "element" ? "80" : "61";
       el.style.borderRadius = "0.75rem";
       if (step.highlight === "nav") {
         el.style.background = "white";
       } else {
         el.style.boxShadow = "0 0 0 4px rgba(255, 255, 255, 0.8)";
+      }
+
+      scheduleRectUpdate();
+      window.addEventListener("resize", scheduleRectUpdate);
+      window.addEventListener("scroll", scheduleRectUpdate, true);
+      if (typeof ResizeObserver !== "undefined") {
+        resizeObserver = new ResizeObserver(scheduleRectUpdate);
+        resizeObserver.observe(el);
       }
     };
 
@@ -237,6 +271,12 @@ export function NavExplainerOverlay({
       if (typeof timeoutId !== "undefined") {
         window.clearTimeout(timeoutId);
       }
+      if (typeof rectRafId !== "undefined") {
+        window.cancelAnimationFrame(rectRafId);
+      }
+      window.removeEventListener("resize", scheduleRectUpdate);
+      window.removeEventListener("scroll", scheduleRectUpdate, true);
+      resizeObserver?.disconnect();
       if (!highlightedElement || !previousStyles) return;
       highlightedElement.style.position = previousStyles.position;
       highlightedElement.style.zIndex = previousStyles.zIndex;
@@ -248,6 +288,50 @@ export function NavExplainerOverlay({
 
   if (!mounted || !step) return null;
 
+  const currentRouteMatchesStep = (() => {
+    if (!step.navigateTo) return true;
+    const resolvedTarget = resolveTarget(step.navigateTo);
+    const [targetPath, targetQuery = ""] = resolvedTarget.split("?");
+    const targetSearch = targetQuery ? `?${targetQuery}` : "";
+    return location.pathname === targetPath && location.search === targetSearch;
+  })();
+
+  const waitingForElementStep =
+    step.highlight === "element" &&
+    (!currentRouteMatchesStep || navigation.state !== "idle" || !targetReady || !targetRect);
+
+  const anchoredBubbleStyle = (() => {
+    if (step.highlight !== "element" || waitingForElementStep || !targetRect) return undefined;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const bubbleWidth = Math.min(ELEMENT_STEP_WIDTH, viewportWidth - OVERLAY_MARGIN * 2);
+    const desiredLeft = targetRect.left + targetRect.width / 2 - bubbleWidth / 2;
+    const clampedLeft = Math.max(
+      OVERLAY_MARGIN,
+      Math.min(desiredLeft, viewportWidth - bubbleWidth - OVERLAY_MARGIN)
+    );
+    const showBelow = viewportHeight - targetRect.bottom >= 280 || viewportHeight - targetRect.bottom >= targetRect.top;
+
+    if (showBelow) {
+      return {
+        position: "fixed" as const,
+        left: `${clampedLeft}px`,
+        top: `${targetRect.bottom + 18}px`,
+        width: `${bubbleWidth}px`,
+      };
+    }
+
+    return {
+      position: "fixed" as const,
+      left: `${clampedLeft}px`,
+      top: `${Math.max(20, targetRect.top - 18)}px`,
+      transform: "translateY(-100%)",
+      width: `${bubbleWidth}px`,
+    };
+  })();
+
+  const isAnchoredElementStep = step.highlight === "element" && !waitingForElementStep;
+
   return (
     <AnimatePresence mode="wait">
       <motion.div
@@ -256,7 +340,9 @@ export function NavExplainerOverlay({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.3 }}
-        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+        className={`fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm ${
+          isAnchoredElementStep ? "pointer-events-none" : "flex items-center justify-center p-4"
+        }`}
       >
         <motion.div
           key={step.id}
@@ -264,15 +350,29 @@ export function NavExplainerOverlay({
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25 }}
-          className="w-full max-w-lg"
+          className={isAnchoredElementStep ? "pointer-events-auto" : "w-full max-w-lg"}
+          style={anchoredBubbleStyle}
         >
-          <DonkeyBubble title={step.title}>
-            <p className="mt-2 text-sm leading-relaxed text-slate-600">
-              {step.description}
-            </p>
-          </DonkeyBubble>
+          {waitingForElementStep ? (
+            <div className="w-full max-w-md rounded-2xl border-2 border-black bg-white p-5 shadow-[4px_4px_0_#1a1a1a]">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-700" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Loading Settings…</p>
+                  <p className="text-xs text-slate-600">
+                    Waiting for the integration guide button to finish rendering.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <DonkeyBubble title={step.title}>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                {step.description}
+              </p>
+            </DonkeyBubble>
+          )}
 
-          {/* progress dots */}
           <div className="mt-4 flex items-center justify-center gap-1.5">
             {NAV_STEPS.map((_, i) => (
               <div
@@ -284,28 +384,29 @@ export function NavExplainerOverlay({
             ))}
           </div>
 
-          <div className="mt-3 flex items-center justify-end gap-2">
-              {stepIndex > 0 && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => goToStep(stepIndex - 1)}
-                >
-                  Back
-                </Button>
-              )}
-              {isLast ? (
-                <Button type="button" size="lg" onClick={onComplete}>
-                  {step.nextLabel ?? "Let's get started!"}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={() => goToStep(stepIndex + 1)}
-                >
-                  {step.nextLabel ?? "Next"}
-                </Button>
-              )}
+          <div className="mt-3 flex items-center justify-end gap-2 pointer-events-auto">
+            {stepIndex > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => goToStep(stepIndex - 1)}
+              >
+                Back
+              </Button>
+            )}
+            {isLast ? (
+              <Button type="button" size="lg" onClick={onComplete}>
+                {step.nextLabel ?? "Let's get started!"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled={waitingForElementStep}
+                onClick={() => goToStep(stepIndex + 1)}
+              >
+                {step.nextLabel ?? "Next"}
+              </Button>
+            )}
           </div>
         </motion.div>
       </motion.div>

@@ -405,6 +405,20 @@ export default function BillingRoute() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
+      {/* Header Section */}
+      <motion.section
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.22 }}
+        className="rounded-3xl border border-slate-200 bg-gradient-to-r from-white via-[#f0faf6] to-[#e8f5f0] p-6 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.55)]"
+      >
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2f6f71]">Billing</p>
+          <h1 className="mt-2 font-display text-3xl font-bold text-slate-900">Donkey Support</h1>
+          <p className="mt-2 text-sm text-slate-600">Manage your subscription, view usage, and upgrade your plan.</p>
+        </div>
+      </motion.section>
+
       {/* Checkout result banners */}
       {result === "success" && (
         <motion.div
