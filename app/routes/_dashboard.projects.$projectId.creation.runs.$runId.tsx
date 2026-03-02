@@ -52,6 +52,7 @@ type LoaderData = {
   briefs: ContentBriefResponse[];
   articles: ContentArticleResponse[];
   rankedTopics: TopicResponse[];
+  activePillarSlug: string | null;
 };
 
 type ActionData = {
@@ -99,6 +100,8 @@ function formatConfidencePercent(value: number | null | undefined): string | nul
 export async function loader({ request, params }: Route.LoaderArgs) {
   const projectId = params.projectId;
   const runId = params.runId;
+  const requestUrl = new URL(request.url);
+  const activePillarSlug = String(requestUrl.searchParams.get("pillar") ?? "").trim() || null;
 
   if (!projectId || !runId) {
     throw new Response("Missing route parameters.", { status: 400 });
@@ -139,10 +142,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const selectedRunIndex = runs.findIndex((entry) => entry.id === selectedRunSummary.id);
   const nextNewerRun = selectedRunIndex > 0 ? runs[selectedRunIndex - 1] : null;
 
+  const articleQuery = new URLSearchParams({
+    page: "1",
+    page_size: "100",
+  });
+  if (activePillarSlug) {
+    articleQuery.set("pillar_slug", activePillarSlug);
+  }
+
   const [selectedRunResult, briefsResult, articlesResult, rankedTopicsResult] = await Promise.all([
     fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${runId}`),
     fetchJson<ContentBriefListResponse>(api, `/content/${projectId}/briefs?page=1&page_size=100`),
-    fetchJson<ContentArticleListResponse>(api, `/content/${projectId}/articles?page=1&page_size=100`),
+    fetchJson<ContentArticleListResponse>(api, `/content/${projectId}/articles?${articleQuery.toString()}`),
     fetchJson<TopicResponse[]>(api, `/topics/${projectId}/ranked?limit=20`),
   ]);
 
@@ -179,15 +190,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const windowStartMs = parseTimestamp(selectedRun.started_at ?? selectedRun.created_at);
   const windowEndMs = parseTimestamp(nextNewerRun?.started_at ?? nextNewerRun?.created_at);
 
-  const briefs = allBriefs.filter((brief) => {
+  const runBriefs = allBriefs.filter((brief) => {
     if (selectedRun.source_topic_id && brief.topic_id !== selectedRun.source_topic_id) return false;
     return isWithinRunWindow(brief.created_at, windowStartMs, windowEndMs);
   });
-  const briefIds = new Set(briefs.map((brief) => brief.id));
+  const briefIds = new Set(runBriefs.map((brief) => brief.id));
   const articles = allArticles.filter((article) => {
     if (!briefIds.has(article.brief_id)) return false;
     return isWithinRunWindow(article.created_at, windowStartMs, windowEndMs);
   });
+  const articleBriefIds = new Set(articles.map((article) => article.brief_id));
+  const briefs = activePillarSlug
+    ? runBriefs.filter((brief) => articleBriefIds.has(brief.id))
+    : runBriefs;
 
   return data(
     {
@@ -197,6 +212,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       briefs,
       articles,
       rankedTopics: rankedTopicsResult.ok && rankedTopicsResult.data ? rankedTopicsResult.data : [],
+      activePillarSlug,
     } satisfies LoaderData,
     {
       headers: await api.commit(),
@@ -483,6 +499,7 @@ export default function ProjectCreationRunRoute() {
     briefs,
     articles,
     rankedTopics,
+    activePillarSlug,
   } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const revalidator = useRevalidator();
@@ -523,6 +540,26 @@ export default function ProjectCreationRunRoute() {
     () => stepExecutions.slice().sort((a, b) => a.step_number - b.step_number),
     [stepExecutions],
   );
+
+  const availablePillars = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const article of articles) {
+      const primaryPillar = article.primary_pillar;
+      if (primaryPillar?.slug && primaryPillar.name) {
+        seen.set(primaryPillar.slug, primaryPillar.name);
+      }
+
+      for (const secondaryPillar of article.secondary_pillars ?? []) {
+        if (secondaryPillar.slug && secondaryPillar.name) {
+          seen.set(secondaryPillar.slug, secondaryPillar.name);
+        }
+      }
+    }
+
+    return Array.from(seen.entries())
+      .map(([slug, name]) => ({ slug, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [articles]);
 
   // Build topic → brief → article mapping
   const topicGroups = useMemo<TopicGroup[]>(() => {
@@ -628,6 +665,34 @@ export default function ProjectCreationRunRoute() {
         <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
           {actionData.error}
         </p>
+      ) : null}
+
+      {availablePillars.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Pillar filter</CardTitle>
+            <CardDescription>Filter this run by article pillar assignments.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              <Link to={`/projects/${project.id}/creation/runs/${selectedRun.id}`}>
+                <Button variant={activePillarSlug ? "outline" : "secondary"} size="sm">
+                  All pillars
+                </Button>
+              </Link>
+              {availablePillars.map((pillar) => (
+                <Link
+                  key={pillar.slug}
+                  to={`/projects/${project.id}/creation/runs/${selectedRun.id}?pillar=${encodeURIComponent(pillar.slug)}`}
+                >
+                  <Button variant={activePillarSlug === pillar.slug ? "secondary" : "outline"} size="sm">
+                    {pillar.name}
+                  </Button>
+                </Link>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       ) : null}
 
       {/* Step timeline */}
