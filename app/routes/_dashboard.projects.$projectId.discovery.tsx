@@ -292,8 +292,14 @@ function getStepState(
   currentStepName: string | null,
   executions: StepExecution[],
   isActive: boolean,
+  overallProgress: number,
 ): "completed" | "running" | "idle" {
   const exec = executions.find((e) => e.step_number === step.number);
+
+  // If the pipeline is not active and overall progress is 100%, mark all steps as completed
+  if (!isActive && overallProgress === 100) {
+    return "completed";
+  }
 
   // Check if this step is currently running based on the step name
   if (isActive && currentStepName) {
@@ -328,16 +334,18 @@ function DiscoveryStepTimeline({
   currentStepName,
   steps,
   isActive,
+  overallProgress,
 }: {
   currentStepName: string | null;
   steps: StepExecution[];
   isActive: boolean;
+  overallProgress: number;
 }) {
   return (
     <div className="py-2">
       <div className="flex items-center">
         {DISCOVERY_STEPS.map((step, i) => {
-          const state = getStepState(step, currentStepName, steps, isActive);
+          const state = getStepState(step, currentStepName, steps, isActive, overallProgress);
           return (
             <div key={step.number} className="flex items-center" style={{ flex: i < DISCOVERY_STEPS.length - 1 ? 1 : undefined }}>
               {/* Node */}
@@ -474,10 +482,24 @@ export default function ProjectDiscoveryHubRoute() {
           {actionData.error}
         </p>
       ) : null}
-      {articleLimitMessage ? (
-        <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-          {articleLimitMessage}
-        </p>
+      {articleLimitMessage && showUpgradeOnly ? (
+        <Card className="border-amber-400 bg-gradient-to-br from-amber-50 via-yellow-50 to-amber-100">
+          <CardContent className="flex flex-col gap-4 pt-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-1">
+              <p className="text-sm font-bold text-amber-900">
+                Unlock More Discovery Power
+              </p>
+              <p className="text-sm text-amber-800">
+                {articleLimitMessage.replace("Upgrade your plan to resume discovery.", "Upgrade to continue discovering keywords, analyzing topics, and growing your content strategy.")}
+              </p>
+            </div>
+            <Link to="/billing" className="shrink-0">
+              <Button size="lg" className="bg-gradient-to-r from-amber-600 to-orange-600 font-semibold shadow-lg hover:from-amber-700 hover:to-orange-700">
+                Upgrade Now
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       ) : null}
 
       {latestRun ? (
@@ -493,13 +515,19 @@ export default function ProjectDiscoveryHubRoute() {
                     {formatStatusLabel(effectiveStatus)}
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                  <p>
-                    Current step:{" "}
-                    {liveProgress?.current_step_name ?? "N/A"}
+                {isRunActive(effectiveStatus) && liveProgress?.current_step_name ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                    <p>
+                      Current step:{" "}
+                      {liveProgress.current_step_name}
+                    </p>
+                    <p>Started: {formatDateTime(latestRun.started_at ?? latestRun.created_at)}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-500">
+                    Started: {formatDateTime(latestRun.started_at ?? latestRun.created_at)}
                   </p>
-                  <p>Started: {formatDateTime(latestRun.started_at ?? latestRun.created_at)}</p>
-                </div>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -534,10 +562,14 @@ export default function ProjectDiscoveryHubRoute() {
 
             <div className="mt-4 space-y-1">
               <Progress value={overallProgress} />
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                <p>{overallProgress}% · {formatStepName(liveProgress?.current_step_name)}</p>
-                <p>{formatDateTime(latestRun.started_at ?? latestRun.created_at)}</p>
-              </div>
+              {isRunActive(effectiveStatus) && liveProgress?.current_step_name ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                  <p>{overallProgress}% · {formatStepName(liveProgress.current_step_name)}</p>
+                  <p>{formatDateTime(latestRun.started_at ?? latestRun.created_at)}</p>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">{overallProgress}% complete</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -643,6 +675,7 @@ export default function ProjectDiscoveryHubRoute() {
                 currentStepName={liveProgress?.current_step_name ?? null}
                 steps={liveProgress?.steps ?? latestRun?.step_executions ?? []}
                 isActive={isRunActive(effectiveStatus)}
+                overallProgress={overallProgress}
               />
             </div>
           </CardContent>
