@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Form, Link, data, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
+import { Form, Link, data, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { motion } from "framer-motion";
 import { Check, Loader2, RefreshCw, Key, Webhook, Bot, Copy, ChevronDown, ChevronUp } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
@@ -35,12 +35,21 @@ type ActionData = {
   webhookSaved?: boolean;
 };
 
+type SettingsTab = "overview" | "api-keys" | "webhooks" | "ai-guide";
+
 const ACTIVE_PROJECT_SESSION_KEY = "activeProjectId";
 
 function normalizeSessionProjectId(value: unknown) {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function parseOnboardingTab(value: string | null): SettingsTab | null {
+  if (value === "overview" || value === "api-keys" || value === "webhooks" || value === "ai-guide") {
+    return value;
+  }
+  return null;
 }
 
 export async function loader({ request }: { request: Request }) {
@@ -326,8 +335,10 @@ export default function DashboardSettingsRoute() {
   const { projects, activeProject, fullProject, guideContent } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const navigation = useNavigation();
+  const [searchParams] = useSearchParams();
+  const onboardingTab = parseOnboardingTab(searchParams.get("onboardingTab"));
 
-  const [activeTab, setActiveTab] = useState<"overview" | "api-keys" | "webhooks" | "ai-guide">("overview");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(onboardingTab ?? "overview");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [webhookCopyState, setWebhookCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [guideCopyState, setGuideCopyState] = useState<"idle" | "copied" | "error">("idle");
@@ -360,6 +371,11 @@ export default function DashboardSettingsRoute() {
   useEffect(() => {
     setWebhookUrl(projectSettings?.notification_webhook ?? "");
   }, [projectSettings?.notification_webhook]);
+
+  useEffect(() => {
+    if (!onboardingTab) return;
+    setActiveTab(onboardingTab);
+  }, [onboardingTab]);
 
   const handleCopyKey = async () => {
     if (!generatedKey?.api_key) return;
@@ -912,18 +928,21 @@ const isValid = hmac === signatureHeader;`}</code>
               transition={{ duration: 0.2 }}
               className="max-w-4xl"
             >
-              <Card>
+              <Card data-onboarding-focus="settings-ai-guide-card">
                 <CardHeader>
                   <CardTitle>Build Integrations with AI Agents</CardTitle>
                   <CardDescription>
-                    Copy this comprehensive guide and share it with Claude Code, ChatGPT, or your preferred AI assistant. The
-                    guide contains all API documentation, authentication details, and example code needed to build your Donkey
-                    SEO integration.
+                    Install the DonkeySEO client in your coding agent by copying this guide. It includes the API docs,
+                    authentication details, and example code needed to set up your integration.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <Button onClick={handleCopyGuide} disabled={!guideContent}>
+                    <Button
+                      data-onboarding-focus="settings-ai-guide-copy"
+                      onClick={handleCopyGuide}
+                      disabled={!guideContent}
+                    >
                       {guideCopyState === "copied" ? (
                         <>
                           <Check className="mr-2 h-4 w-4" />
@@ -943,10 +962,10 @@ const isValid = hmac === signatureHeader;`}</code>
                     <p className="font-semibold">How to use this guide:</p>
                     <ol className="mt-2 space-y-1 text-xs">
                       <li>1. Click "Copy Integration Guide" above</li>
-                      <li>2. Open Claude Code, ChatGPT, or your preferred AI assistant</li>
-                      <li>3. Paste the guide and describe what you want to build</li>
+                      <li>2. Open your coding agent (Claude Code, ChatGPT, or similar)</li>
+                      <li>3. Paste the copied agent code and setup instructions</li>
                       <li>
-                        4. Example: "Build a Next.js API route that receives Donkey webhooks and publishes articles to WordPress"
+                        4. Ask it to install or generate the DonkeySEO integration you need
                       </li>
                     </ol>
                   </div>

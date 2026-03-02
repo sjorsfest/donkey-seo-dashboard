@@ -8,7 +8,6 @@ import {
   useActionData,
   useFetcher,
   useLoaderData,
-  useNavigate,
   useRevalidator,
 } from "react-router";
 import { Layers } from "lucide-react";
@@ -17,7 +16,6 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
-import { Select } from "~/components/ui/select";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
@@ -39,7 +37,6 @@ import type { components } from "~/types/api.generated";
 
 type ProjectResponse = components["schemas"]["ProjectResponse"];
 type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
-type PipelineStartRequest = components["schemas"]["PipelineStartRequest"];
 type PipelineProgressResponse = components["schemas"]["PipelineProgressResponse"];
 type StepExecutionResponse = components["schemas"]["StepExecutionResponse"];
 type ContentBriefListResponse = components["schemas"]["ContentBriefListResponse"];
@@ -50,7 +47,6 @@ type TopicResponse = components["schemas"]["TopicResponse"];
 
 type LoaderData = {
   project: ProjectResponse;
-  runs: PipelineRunResponse[];
   selectedRun: PipelineRunResponse;
   progress: PipelineProgressResponse | null;
   briefs: ContentBriefResponse[];
@@ -77,6 +73,20 @@ async function handleUnauthorized(api: ApiClient) {
       "Set-Cookie": await api.logout(),
     },
   });
+}
+
+function parseTimestamp(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function isWithinRunWindow(timestamp: string, windowStartMs: number | null, windowEndMs: number | null) {
+  const parsedTimestamp = parseTimestamp(timestamp);
+  if (parsedTimestamp === null) return true;
+  if (windowStartMs !== null && parsedTimestamp < windowStartMs) return false;
+  if (windowEndMs !== null && parsedTimestamp >= windowEndMs) return false;
+  return true;
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -119,6 +129,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
     throw new Response("Pipeline run not found.", { status: 404 });
   }
+  const selectedRunIndex = runs.findIndex((entry) => entry.id === selectedRunSummary.id);
+  const nextNewerRun = selectedRunIndex > 0 ? runs[selectedRunIndex - 1] : null;
 
   const [selectedRunResult, briefsResult, articlesResult, rankedTopicsResult] = await Promise.all([
     fetchJson<PipelineRunResponse>(api, `/pipeline/${projectId}/runs/${runId}`),
@@ -155,13 +167,24 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }
   }
 
-  const briefs = briefsResult.ok && briefsResult.data ? briefsResult.data.items ?? [] : [];
-  const articles = articlesResult.ok && articlesResult.data ? articlesResult.data.items ?? [] : [];
+  const allBriefs = briefsResult.ok && briefsResult.data ? briefsResult.data.items ?? [] : [];
+  const allArticles = articlesResult.ok && articlesResult.data ? articlesResult.data.items ?? [] : [];
+  const windowStartMs = parseTimestamp(selectedRun.started_at ?? selectedRun.created_at);
+  const windowEndMs = parseTimestamp(nextNewerRun?.started_at ?? nextNewerRun?.created_at);
+
+  const briefs = allBriefs.filter((brief) => {
+    if (selectedRun.source_topic_id && brief.topic_id !== selectedRun.source_topic_id) return false;
+    return isWithinRunWindow(brief.created_at, windowStartMs, windowEndMs);
+  });
+  const briefIds = new Set(briefs.map((brief) => brief.id));
+  const articles = allArticles.filter((article) => {
+    if (!briefIds.has(article.brief_id)) return false;
+    return isWithinRunWindow(article.created_at, windowStartMs, windowEndMs);
+  });
 
   return data(
     {
       project: projectResult.data,
-      runs,
       selectedRun,
       progress,
       briefs,
@@ -184,51 +207,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = String(formData.get("intent") ?? "");
   const api = new ApiClient(request);
 
-  if (intent !== "startCreation" && intent !== "pausePipeline" && intent !== "resumePipeline") {
+  if (intent !== "pausePipeline" && intent !== "resumePipeline") {
     return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
-  }
-
-  if (intent === "startCreation") {
-    const payload: PipelineStartRequest = {
-      mode: "content",
-      start_step: 0,
-      content: {
-        max_briefs: 20,
-        posts_per_week: 1,
-        min_lead_days: 7,
-        use_llm_timing_hints: true,
-        llm_timing_flex_days: 14,
-        include_zero_data_topics: true,
-        zero_data_topic_share: 0.2,
-        zero_data_fit_score_min: 0.65,
-      },
-    };
-
-    const startResponse = await api.fetch(`/pipeline/${projectId}/start`, {
-      method: "POST",
-      json: payload,
-    });
-
-    if (startResponse.status === 401) return handleUnauthorized(api);
-
-    if (!startResponse.ok) {
-      const apiMessage = await readApiErrorMessage(startResponse);
-      return data(
-        {
-          error:
-            apiMessage ??
-            (startResponse.status === 409
-              ? "Content creation is already running for this project."
-              : "Unable to start creation run."),
-        } satisfies ActionData,
-        { status: startResponse.status, headers: await api.commit() },
-      );
-    }
-
-    const startedRun = (await startResponse.json()) as PipelineRunResponse;
-    return redirect(`/projects/${projectId}/creation/runs/${startedRun.id}`, {
-      headers: await api.commit(),
-    });
   }
 
   if (intent === "pausePipeline") {
@@ -470,7 +450,6 @@ function TopicGroupCard({
 export default function ProjectCreationRunRoute() {
   const {
     project,
-    runs,
     selectedRun,
     progress,
     briefs,
@@ -478,7 +457,6 @@ export default function ProjectCreationRunRoute() {
     rankedTopics,
   } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
-  const navigate = useNavigate();
   const revalidator = useRevalidator();
 
   const progressFetcher = useFetcher<PipelineProgressResponse>();
@@ -557,10 +535,6 @@ export default function ProjectCreationRunRoute() {
     });
   }, [briefs, articles, rankedTopics]);
 
-  function buildCreationRunUrl(runId: string) {
-    return `/projects/${project.id}/creation/runs/${runId}`;
-  }
-
   const runIsActive = isRunActive(effectiveStatus);
 
   return (
@@ -583,12 +557,6 @@ export default function ProjectCreationRunRoute() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Form method="post">
-              <input type="hidden" name="intent" value="startCreation" />
-              <Button type="submit" disabled={runIsActive}>
-                Start new run
-              </Button>
-            </Form>
             <Form method="post">
               <input type="hidden" name="intent" value="pausePipeline" />
               <input type="hidden" name="run_id" value={selectedRun.id} />
@@ -626,30 +594,6 @@ export default function ProjectCreationRunRoute() {
           </div>
         </div>
 
-        {/* Run selector */}
-        {runs.length > 1 ? (
-          <div className="mt-4 border-t border-slate-200 pt-3">
-            <label className="flex items-center gap-2 text-sm text-slate-600">
-              <span>Switch run:</span>
-              <Select
-                value={selectedRun.id}
-                onChange={(event) => {
-                  const runValue = event.target.value;
-                  if (!runValue) return;
-                  navigate(buildCreationRunUrl(runValue));
-                }}
-                className="h-9 min-w-[260px]"
-              >
-                {runs.map((run) => (
-                  <option key={run.id} value={run.id}>
-                    {run.id.slice(0, 8)} · {run.source_topic_id ? `Topic ${run.source_topic_id}` : "Content run"} ·{" "}
-                    {formatStatusLabel(run.status)}
-                  </option>
-                ))}
-              </Select>
-            </label>
-          </div>
-        ) : null}
       </section>
 
       {actionData?.error ? (
@@ -687,7 +631,7 @@ export default function ProjectCreationRunRoute() {
       {briefs.length > 0 ? (
         <section className="space-y-4">
           <div>
-            <h2 className="font-display text-xl font-bold text-slate-900">Topics &amp; Articles</h2>
+            <h2 className="font-display text-xl font-bold text-slate-900">Topics &amp; Articles for this run</h2>
             <p className="text-sm text-slate-500">
               {briefs.length} {briefs.length === 1 ? "brief" : "briefs"} across {topicGroups.length}{" "}
               {topicGroups.length === 1 ? "topic" : "topics"}
@@ -710,43 +654,11 @@ export default function ProjectCreationRunRoute() {
             <p className="text-sm text-slate-500">
               {runIsActive
                 ? "Briefs are being generated. They will appear here as the pipeline progresses."
-                : "No briefs have been generated for this project yet."}
+                : "No briefs were generated for this run."}
             </p>
           </CardContent>
         </Card>
       )}
-
-      {/* Other runs */}
-      {runs.length > 1 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Other runs</CardTitle>
-            <CardDescription>Content-module runs for this project.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {runs
-              .filter((run) => run.id !== selectedRun.id)
-              .slice(0, 6)
-              .map((run) => (
-                <Link
-                  key={run.id}
-                  to={buildCreationRunUrl(run.id)}
-                  className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm hover:border-slate-300"
-                >
-                  <p className="font-semibold text-slate-900">
-                    {run.id.slice(0, 8)} · {formatDateTime(run.created_at)}
-                    {run.source_topic_id ? ` · Topic ${run.source_topic_id}` : ""}
-                  </p>
-                  <span
-                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(run.status)}`}
-                  >
-                    {formatStatusLabel(run.status)}
-                  </span>
-                </Link>
-              ))}
-          </CardContent>
-        </Card>
-      ) : null}
     </div>
   );
 }

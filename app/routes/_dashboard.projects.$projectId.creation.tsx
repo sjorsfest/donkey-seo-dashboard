@@ -327,10 +327,7 @@ export default function ProjectCreationHubRoute() {
 
       {/* Stat cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Link
-          to={contentDetailsHref}
-          className="group block rounded-2xl border-2 border-black border-l-4 border-l-indigo-500 bg-white shadow-[4px_4px_0_#1a1a1a] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_#1a1a1a]"
-        >
+        <div className="rounded-2xl border-2 border-black border-l-4 border-l-indigo-500 bg-white shadow-[4px_4px_0_#1a1a1a]">
           <div className="p-5">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
@@ -342,9 +339,9 @@ export default function ProjectCreationHubRoute() {
             </div>
             <p className="mt-3 font-display text-3xl font-bold text-slate-900">{briefTotal}</p>
             <p className="text-sm text-slate-500">total briefs generated</p>
-            <p className="mt-1 text-xs text-slate-400">Open briefs and article previews</p>
+            <p className="mt-1 text-xs text-slate-400">Open briefs from the Articles card</p>
           </div>
-        </Link>
+        </div>
 
         <Link
           to={contentDetailsHref}
@@ -427,6 +424,11 @@ export default function ProjectCreationHubRoute() {
                     {formatStatusLabel(runStatus)}
                   </span>
                   <div className="flex items-center gap-2">
+                    <Link to={`/projects/${project.id}/creation/runs/${run.id}`}>
+                      <Button type="button" variant="outline" size="sm">
+                        View progress
+                      </Button>
+                    </Link>
                     <Form method="post">
                       <input type="hidden" name="intent" value="pausePipeline" />
                       <input type="hidden" name="run_id" value={run.id} />

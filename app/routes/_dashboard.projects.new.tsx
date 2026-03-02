@@ -19,7 +19,6 @@ import {
   suggestProjectNameFromDomain,
 } from "~/lib/dashboard";
 import { COUNTRY_OPTIONS, countryToLocale } from "~/lib/onboarding";
-import { pickLatestRunForModule } from "~/lib/pipeline-module";
 import { fetchJson } from "~/lib/pipeline-run.server";
 import { useOnboarding } from "~/components/onboarding/onboarding-context";
 import { OnboardingOverlay } from "~/components/onboarding/onboarding-overlay";
@@ -29,7 +28,6 @@ import type { SetupPreset } from "~/types/dashboard";
 
 type ProjectResponse = components["schemas"]["ProjectResponse"];
 type ProjectUpdate = components["schemas"]["ProjectUpdate"];
-type PipelineStartRequest = components["schemas"]["PipelineStartRequest"];
 type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
 type ProjectOnboardingBootstrapRequest = components["schemas"]["ProjectOnboardingBootstrapRequest"];
 type ProjectOnboardingBootstrapResponse = components["schemas"]["ProjectOnboardingBootstrapResponse"];
@@ -690,63 +688,6 @@ export async function action({ request }: Route.ActionArgs) {
       }),
       { headers: await api.commit() }
     );
-  }
-
-  if (intent === "startDiscovery") {
-    const projectId = String(formData.get("project_id") ?? "").trim();
-    const setupRunId = String(formData.get("setup_run_id") ?? "").trim();
-    const setupTaskId = String(formData.get("setup_task_id") ?? "").trim();
-
-    if (!projectId || !setupRunId || !setupTaskId) {
-      return data({ error: "Missing onboarding context." } satisfies ActionData, {
-        status: 400,
-        headers: await api.commit(),
-      });
-    }
-
-    const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
-    if (runsResult.unauthorized) return handleUnauthorized(api);
-    if (!runsResult.ok || !runsResult.data) {
-      return data(
-        { error: "Unable to verify existing discovery run." } satisfies ActionData,
-        { status: runsResult.status, headers: await api.commit() }
-      );
-    }
-
-    const existingDiscoveryRun = pickLatestRunForModule(runsResult.data, "discovery");
-    if (existingDiscoveryRun) {
-      return redirect(`/projects/${projectId}/discovery/runs/${encodeURIComponent(existingDiscoveryRun.id)}?created=1`, {
-        headers: await api.commit(),
-      });
-    }
-
-    const payload: PipelineStartRequest = {
-      mode: "discovery",
-    };
-
-    const startResponse = await api.fetch(`/pipeline/${projectId}/start`, {
-      method: "POST",
-      json: payload,
-    });
-
-    if (startResponse.status === 401) return handleUnauthorized(api);
-
-    if (!startResponse.ok) {
-      const apiMessage = await readApiErrorMessage(startResponse);
-      return data(
-        {
-          error:
-            apiMessage ??
-            (startResponse.status === 409 ? "Discovery is already running for this project." : "Unable to start discovery."),
-        } satisfies ActionData,
-        { status: startResponse.status, headers: await api.commit() }
-      );
-    }
-
-    const run = (await startResponse.json()) as PipelineRunResponse;
-    return redirect(`/projects/${projectId}/discovery/runs/${encodeURIComponent(run.id)}?created=1`, {
-      headers: await api.commit(),
-    });
   }
 
   return data({ error: "Unsupported action." } satisfies ActionData, {
@@ -1625,22 +1566,25 @@ export default function ProjectSetupRoute() {
             </CardContent>
           </Card>
 
-          <Form method="post" className="flex flex-wrap items-center justify-between gap-3">
-            <input type="hidden" name="intent" value="startDiscovery" />
-            <input type="hidden" name="project_id" value={projectId ?? ""} />
-            <input type="hidden" name="setup_run_id" value={setupRunId ?? ""} />
-            <input type="hidden" name="setup_task_id" value={setupTaskId ?? ""} />
-
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <Link to={retryLink}>
               <Button type="button" variant="outline">
                 Restart onboarding
               </Button>
             </Link>
 
-            <Button type="submit" size="lg" disabled={!isTaskCompleted || isSubmitting}>
-              {isSubmitting ? "Starting discovery..." : "Start Topic Discovery"}
-            </Button>
-          </Form>
+            {projectId && isTaskCompleted ? (
+              <Link to={`/projects/${projectId}/discovery`}>
+                <Button type="button" size="lg">
+                  Open discovery
+                </Button>
+              </Link>
+            ) : (
+              <Button type="button" size="lg" disabled>
+                Waiting for setup completion
+              </Button>
+            )}
+          </div>
 
           {onboarding.isPhase("setup_progress") && !setupDismissed && (
             <OnboardingOverlay
@@ -1668,7 +1612,7 @@ export default function ProjectSetupRoute() {
                       </li>
                     </ul>
                     <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                      Hit <strong className="text-slate-800">"Start Topic Discovery"</strong> to kick off your first research loop!
+                      Discovery runs are triggered automatically once setup is complete.
                     </p>
                   </>
                 ) : (

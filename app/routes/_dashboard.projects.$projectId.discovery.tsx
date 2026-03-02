@@ -28,7 +28,6 @@ import type { components } from "~/types/api.generated";
 
 type ProjectResponse = components["schemas"]["ProjectResponse"];
 type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
-type PipelineStartRequest = components["schemas"]["PipelineStartRequest"];
 type PipelineProgressResponse = components["schemas"]["PipelineProgressResponse"];
 type KeywordListResponse = components["schemas"]["KeywordListResponse"];
 type TopicListResponse = components["schemas"]["TopicListResponse"];
@@ -170,69 +169,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
 
-  if (intent !== "startDiscovery" && intent !== "pausePipeline" && intent !== "resumePipeline") {
+  if (intent !== "pausePipeline" && intent !== "resumePipeline") {
     return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
-  }
-
-  if (intent === "startDiscovery") {
-    const runsResult = await fetchJson<PipelineRunResponse[]>(api, `/pipeline/${projectId}/runs?limit=12`);
-    if (runsResult.unauthorized) return handleUnauthorized(api);
-    if (!runsResult.ok || !runsResult.data) {
-      return data(
-        { error: "Unable to verify existing discovery run." } satisfies ActionData,
-        { status: runsResult.status, headers: await api.commit() }
-      );
-    }
-
-    const existingDiscoveryRun = pickLatestRunForModule(runsResult.data, "discovery");
-    if (existingDiscoveryRun) {
-      return redirect(`/projects/${projectId}/discovery/runs/${encodeURIComponent(existingDiscoveryRun.id)}`, {
-        headers: await api.commit(),
-      });
-    }
-
-    const payload: PipelineStartRequest = {
-      mode: "discovery",
-      start_step: 0,
-      discovery: {
-        max_iterations: 3,
-        min_eligible_topics: null,
-        require_serp_gate: true,
-        max_keyword_difficulty: 65,
-        min_domain_diversity: 0.5,
-        require_intent_match: true,
-        max_serp_servedness: 0.75,
-        max_serp_competitor_density: 0.7,
-        min_serp_intent_confidence: 0.35,
-        auto_dispatch_content_tasks: true,
-      },
-    };
-
-    const startResponse = await api.fetch(`/pipeline/${projectId}/start`, {
-      method: "POST",
-      json: payload,
-    });
-
-    if (startResponse.status === 401) return handleUnauthorized(api);
-
-    if (!startResponse.ok) {
-      const apiMessage = await readApiErrorMessage(startResponse);
-      return data(
-        {
-          error:
-            apiMessage ??
-            (startResponse.status === 409
-              ? "Discovery is already running for this project."
-              : "Unable to start discovery run."),
-        } satisfies ActionData,
-        { status: startResponse.status, headers: await api.commit() }
-      );
-    }
-
-    const run = (await startResponse.json()) as PipelineRunResponse;
-    return redirect(`/projects/${projectId}/discovery/runs/${run.id}`, {
-      headers: await api.commit(),
-    });
   }
 
   if (intent === "pausePipeline") {
@@ -528,16 +466,13 @@ export default function ProjectDiscoveryHubRoute() {
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Get started</CardTitle>
+            <CardTitle>Waiting for discovery run</CardTitle>
             <CardDescription>
-              Start a discovery loop to begin iterative keyword analysis, clustering, and topic decisions.
+              Discovery runs are started automatically by the system.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Form method="post">
-              <input type="hidden" name="intent" value="startDiscovery" />
-              <Button type="submit">Start discovery loop</Button>
-            </Form>
+            <p className="text-sm text-slate-500">No discovery run is available yet for this project.</p>
           </CardContent>
         </Card>
       )}
@@ -616,7 +551,7 @@ export default function ProjectDiscoveryHubRoute() {
                 <p className="font-display text-lg font-bold text-slate-400">Discovery Loop</p>
               </div>
             </div>
-            <p className="mt-3 text-sm text-slate-400">No runs yet. Start a discovery loop above.</p>
+            <p className="mt-3 text-sm text-slate-400">No runs yet. Discovery runs are started automatically.</p>
           </div>
         )}
       </div>

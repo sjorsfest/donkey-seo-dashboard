@@ -7,6 +7,7 @@ import {
   redirect,
   useLoaderData,
   useLocation,
+  useNavigation,
 } from "react-router";
 import { motion, useReducedMotion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
@@ -187,7 +188,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const maxProjects = resolvedPlan ? PLAN_PROJECT_LIMIT[resolvedPlan] : 1;
   const canManageMultipleProjects = hasProPlan && (resolvedPlan === "growth" || resolvedPlan === "agency");
   const canCreateAdditionalProject = canManageMultipleProjects && projectCount >= 0 && projectCount < maxProjects;
-  const supportAccountId = process.env.SUPPORT_ACCOUNT_ID ?? "";
+  const supportAccountId = "cmlpg6zlb0004ts09q6rgq7u6" || process.env.SUPPORT_ACCOUNT_ID || "";
   const supportWidgetMetadataSigningSecret = process.env.SUPPORT_WIDGET_METADATA_SIGNING_SECRET ?? "";
   const supportWidgetMetadata = {
     plan: hasProPlan ? "pro" : "freemium",
@@ -333,6 +334,7 @@ function DashboardLayoutInner({
   supportWidgetMetadataToken: string | null;
 }) {
   const location = useLocation();
+  const navigation = useNavigation();
   const prefersReducedMotion = useReducedMotion();
   const onboarding = useOnboarding();
 
@@ -376,6 +378,11 @@ function DashboardLayoutInner({
 
   const canSwitchProjects = switchDisabledReason.length === 0;
   const canAddProjects = addDisabledReason.length === 0;
+  const isRouteTransitioning =
+    navigation.state !== "idle" &&
+    Boolean(navigation.location) &&
+    (navigation.location.pathname !== location.pathname ||
+      navigation.location.search !== location.search);
 
   const renderNavItem = (item: NavItem, isMobile = false) => {
     const href = item.path ?? item.getPath?.(navContext) ?? null;
@@ -574,6 +581,26 @@ function DashboardLayoutInner({
 
   return (
     <>
+      {isRouteTransitioning ? (
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none fixed left-0 top-0 z-[120] h-[3px] w-full origin-left bg-gradient-to-r from-primary-500 via-cyan-500 to-secondary shadow-[0_0_10px_rgba(47,111,113,0.45)]"
+          initial={{ scaleX: 0.08, opacity: 0.95 }}
+          animate={
+            prefersReducedMotion
+              ? { scaleX: 0.9, opacity: 0.95 }
+              : {
+                  scaleX: [0.08, 0.45, 0.72, 0.9],
+                  opacity: [0.9, 1, 0.95, 0.9],
+                }
+          }
+          transition={
+            prefersReducedMotion
+              ? { duration: 0.15, ease: "linear" }
+              : { duration: 1, times: [0, 0.35, 0.75, 1], ease: "linear", repeat: Infinity }
+          }
+        />
+      ) : null}
       <SupportWidget
         accountId={supportAccountId}
         baseUrl={SUPPORT_WIDGET_BASE_URL}
