@@ -584,7 +584,7 @@ function DashboardLayoutInner({
       {isRouteTransitioning ? (
         <motion.div
           aria-hidden="true"
-          className="pointer-events-none fixed left-0 top-0 z-[120] h-[3px] w-full origin-left bg-gradient-to-r from-primary-500 via-cyan-500 to-secondary shadow-[0_0_10px_rgba(47,111,113,0.45)]"
+          className="pointer-events-none fixed left-0 top-0 z-[120] h-[3px] w-full origin-left bg-gradient-to-r from-primary-400 via-primary-500 to-primary-700 shadow-[0_0_10px_rgba(47,111,113,0.45)]"
           initial={{ scaleX: 0.08, opacity: 0.95 }}
           animate={
             prefersReducedMotion
