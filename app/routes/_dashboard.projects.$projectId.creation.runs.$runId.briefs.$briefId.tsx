@@ -4,7 +4,7 @@ import type { Route } from "./+types/_dashboard.projects.$projectId.creation.run
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent } from "~/components/ui/card";
-import { ArticleViewer, ArticleLoadingState, ArticleEmptyState } from "~/components/article-viewer";
+import { ArticleViewer, ArticleEmptyState } from "~/components/article-viewer";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime, isRunActive } from "~/lib/dashboard";
 import { fetchJson } from "~/lib/pipeline-run.server";
@@ -160,7 +160,6 @@ export default function ProjectCreationBriefDetailRoute() {
                   <p className="text-sm text-slate-500">The pipeline is still processing this brief.</p>
                 </div>
               </div>
-              <ArticleLoadingState />
             </CardContent>
           ) : (
             /* No article, run done */

@@ -103,7 +103,7 @@ const NAV_STEPS: NavStep[] = [
   },
   {
     id: "settings-ai-guide",
-    focusSelector: '[data-onboarding-focus="settings-ai-guide-copy"]',
+    focusSelector: '[data-onboarding-focus="settings-ai-guide-card"]',
     title: "Install DonkeySEO Client",
     highlight: "element",
     navigateTo: "/settings?onboardingTab=ai-guide",
@@ -296,6 +296,9 @@ export function NavExplainerOverlay({
     return location.pathname === targetPath && location.search === targetSearch;
   })();
 
+  const waitingForNavigation =
+    step.navigateTo && (!currentRouteMatchesStep || navigation.state !== "idle");
+
   const waitingForElementStep =
     step.highlight === "element" &&
     (!currentRouteMatchesStep || navigation.state !== "idle" || !targetReady || !targetRect);
@@ -365,6 +368,18 @@ export function NavExplainerOverlay({
                 </div>
               </div>
             </div>
+          ) : waitingForNavigation && step.highlight === "nav" ? (
+            <div className="w-full max-w-md rounded-2xl border-2 border-black bg-white p-5 shadow-[4px_4px_0_#1a1a1a]">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-700" />
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Loading…</p>
+                  <p className="text-xs text-slate-600">
+                    Navigating to {step.title}.
+                  </p>
+                </div>
+              </div>
+            </div>
           ) : (
             <DonkeyBubble title={step.title}>
               <p className="mt-2 text-sm leading-relaxed text-slate-600">
@@ -401,7 +416,7 @@ export function NavExplainerOverlay({
             ) : (
               <Button
                 type="button"
-                disabled={waitingForElementStep}
+                disabled={waitingForElementStep || (!!waitingForNavigation && step.highlight === "nav")}
                 onClick={() => goToStep(stepIndex + 1)}
               >
                 {step.nextLabel ?? "Next"}

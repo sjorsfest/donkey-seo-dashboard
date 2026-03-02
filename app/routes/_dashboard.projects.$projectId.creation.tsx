@@ -1,11 +1,10 @@
 import { useEffect, useRef } from "react";
-import { Form, Link, data, redirect, useActionData, useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { FileText, BookOpen, PenSquare } from "lucide-react";
+import { Link, data, redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { FileText, BookOpen, PenSquare, Sparkles } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.creation";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
-import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
   calculateOverallProgress,
@@ -13,8 +12,6 @@ import {
   formatStepName,
   getStatusBadgeClass,
   isRunActive,
-  isRunFailed,
-  isRunPaused,
 } from "~/lib/dashboard";
 import { filterRunsByModule, pickLatestRunForModule, sortPipelineRunsNewest } from "~/lib/pipeline-module";
 import { fetchJson } from "~/lib/pipeline-run.server";
@@ -24,6 +21,7 @@ type ProjectResponse = components["schemas"]["ProjectResponse"];
 type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
 type PipelineProgressResponse = components["schemas"]["PipelineProgressResponse"];
 type ContentBriefListResponse = components["schemas"]["ContentBriefListResponse"];
+type ContentBriefResponse = components["schemas"]["ContentBriefResponse"];
 type ContentArticleListResponse = components["schemas"]["ContentArticleListResponse"];
 type ContentArticleResponse = components["schemas"]["ContentArticleResponse"];
 
@@ -33,12 +31,12 @@ type LoaderData = {
   latestRun: PipelineRunResponse | null;
   latestRunProgress: PipelineProgressResponse | null;
   runProgressById: Record<string, PipelineProgressResponse>;
+  runPrimaryBriefIdByRunId: Record<string, string | null>;
+  briefsById: Record<string, ContentBriefResponse>;
   briefTotal: number;
   articleTotal: number;
   articlesCompleted: number;
 };
-
-type ActionData = { error?: string };
 
 async function handleUnauthorized(api: ApiClient) {
   return redirect("/login", {
@@ -51,6 +49,20 @@ async function handleUnauthorized(api: ApiClient) {
 function countCompletedArticles(articles: ContentArticleResponse[]): number {
   const completedStatuses = new Set(["completed", "success", "done", "published"]);
   return articles.filter((a) => completedStatuses.has(a.status.toLowerCase())).length;
+}
+
+function parseTimestamp(value: string | null | undefined) {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function isWithinRunWindow(timestamp: string, windowStartMs: number | null, windowEndMs: number | null) {
+  const parsedTimestamp = parseTimestamp(timestamp);
+  if (parsedTimestamp === null) return true;
+  if (windowStartMs !== null && parsedTimestamp < windowStartMs) return false;
+  if (windowEndMs !== null && parsedTimestamp >= windowEndMs) return false;
+  return true;
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -93,7 +105,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const [briefsResult, articlesResult] = await Promise.all([
-    fetchJson<ContentBriefListResponse>(api, `/content/${projectId}/briefs?page=1&page_size=1`),
+    fetchJson<ContentBriefListResponse>(api, `/content/${projectId}/briefs?page=1&page_size=100`),
     fetchJson<ContentArticleListResponse>(api, `/content/${projectId}/articles?page=1&page_size=100`),
   ]);
 
@@ -101,11 +113,38 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return handleUnauthorized(api);
   }
 
+  const briefs = briefsResult.ok && briefsResult.data ? briefsResult.data.items ?? [] : [];
   const articles = articlesResult.ok && articlesResult.data ? articlesResult.data.items ?? [] : [];
+  const briefIdsWithArticles = new Set(articles.map((article) => article.brief_id));
+  const runPrimaryBriefIdByRunId = contentRuns.reduce<Record<string, string | null>>((acc, run, index) => {
+    const nextNewerRun = index > 0 ? contentRuns[index - 1] : null;
+    const windowStartMs = parseTimestamp(run.started_at ?? run.created_at);
+    const windowEndMs = parseTimestamp(nextNewerRun?.started_at ?? nextNewerRun?.created_at);
+
+    const runBriefs = briefs
+      .filter((brief: ContentBriefResponse) => {
+        if (run.source_topic_id && brief.topic_id !== run.source_topic_id) return false;
+        return isWithinRunWindow(brief.created_at, windowStartMs, windowEndMs);
+      })
+      .sort((a, b) => {
+        const aTimestamp = parseTimestamp(a.created_at) ?? 0;
+        const bTimestamp = parseTimestamp(b.created_at) ?? 0;
+        return bTimestamp - aTimestamp;
+      });
+
+    const preferredBrief = runBriefs.find((brief) => briefIdsWithArticles.has(brief.id)) ?? runBriefs[0] ?? null;
+    acc[run.id] = preferredBrief?.id ?? null;
+    return acc;
+  }, {});
 
   const preferred = pickLatestRunForModule(rawRuns, "content");
   const latestRun = preferred ?? null;
   const latestRunProgress = latestRun ? runProgressById[latestRun.id] ?? null : null;
+
+  const briefsById = briefs.reduce<Record<string, ContentBriefResponse>>((acc, brief) => {
+    acc[brief.id] = brief;
+    return acc;
+  }, {});
 
   return data(
     {
@@ -114,6 +153,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       latestRun,
       latestRunProgress,
       runProgressById,
+      runPrimaryBriefIdByRunId,
+      briefsById,
       briefTotal: briefsResult.ok && briefsResult.data ? briefsResult.data.total : 0,
       articleTotal: articles.length,
       articlesCompleted: countCompletedArticles(articles),
@@ -124,76 +165,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
 }
 
-export async function action({ request, params }: Route.ActionArgs) {
-  const projectId = params.projectId;
-  if (!projectId) {
-    return data({ error: "Missing project id." } satisfies ActionData, { status: 400 });
-  }
-
-  const api = new ApiClient(request);
-  const formData = await request.formData();
-  const intent = String(formData.get("intent") ?? "");
-
-  if (intent !== "pausePipeline" && intent !== "resumePipeline") {
-    return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
-  }
-
-  if (intent === "pausePipeline") {
-    const runId = String(formData.get("run_id") ?? "").trim();
-    if (!runId) {
-      return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
-    }
-
-    const response = await api.fetch(`/pipeline/${projectId}/runs/${runId}/pause`, {
-      method: "POST",
-    });
-
-    if (response.status === 401) return handleUnauthorized(api);
-
-    if (!response.ok) {
-      const apiMessage = await readApiErrorMessage(response);
-      return data(
-        { error: apiMessage ?? "Unable to pause selected run." } satisfies ActionData,
-        { status: response.status, headers: await api.commit() },
-      );
-    }
-
-    return redirect(`/projects/${projectId}/creation`, {
-      headers: await api.commit(),
-    });
-  }
-
-  // resumePipeline
-  const runId = String(formData.get("run_id") ?? "").trim();
-  if (!runId) {
-    return data({ error: "Missing run id." } satisfies ActionData, { status: 400 });
-  }
-
-  const resumeResponse = await api.fetch(`/pipeline/${projectId}/resume/${runId}`, {
-    method: "POST",
-  });
-
-  if (resumeResponse.status === 401) return handleUnauthorized(api);
-
-  if (!resumeResponse.ok) {
-    const apiMessage = await readApiErrorMessage(resumeResponse);
-    return data(
-      {
-        error:
-          apiMessage ??
-          (resumeResponse.status === 409
-            ? "Content creation is already running for this project."
-            : "Unable to resume pipeline."),
-      } satisfies ActionData,
-      { status: resumeResponse.status, headers: await api.commit() },
-    );
-  }
-
-  return redirect(`/projects/${projectId}/creation`, {
-    headers: await api.commit(),
-  });
-}
-
 export default function ProjectCreationHubRoute() {
   const {
     project,
@@ -201,11 +172,12 @@ export default function ProjectCreationHubRoute() {
     latestRun,
     latestRunProgress,
     runProgressById,
+    runPrimaryBriefIdByRunId,
+    briefsById,
     briefTotal,
     articleTotal,
     articlesCompleted,
   } = useLoaderData<typeof loader>() as LoaderData;
-  const actionData = useActionData<typeof action>() as ActionData | undefined;
   const revalidator = useRevalidator();
 
   const progressFetcher = useFetcher<PipelineProgressResponse>();
@@ -283,6 +255,21 @@ export default function ProjectCreationHubRoute() {
     return formatStepName(null);
   }
 
+  function getArticleName(run: PipelineRunResponse): string | null {
+    const briefId = runPrimaryBriefIdByRunId[run.id];
+    if (!briefId) return null;
+
+    const brief = briefsById[briefId];
+    if (!brief) return null;
+
+    // Prefer working title if available, otherwise use primary keyword
+    if (brief.working_titles && brief.working_titles.length > 0 && brief.working_titles[0]) {
+      return brief.working_titles[0];
+    }
+
+    return brief.primary_keyword;
+  }
+
   const sortedContentRuns = contentRuns
     .slice()
     .sort((a, b) => {
@@ -319,149 +306,169 @@ export default function ProjectCreationHubRoute() {
         </div>
       </section>
 
-      {actionData?.error ? (
-        <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
-          {actionData.error}
-        </p>
-      ) : null}
-
-      {/* Stat cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border-2 border-black border-l-4 border-l-indigo-500 bg-white shadow-[4px_4px_0_#1a1a1a]">
-          <div className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
-                <FileText className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="font-display text-lg font-bold text-slate-900">Briefs</p>
-              </div>
+      {/* Show explainer when no content exists yet */}
+      {briefTotal === 0 && articleTotal === 0 ? (
+        <div className="rounded-3xl border-2 border-dashed border-slate-300 bg-gradient-to-br from-slate-50 to-white p-12">
+          <div className="mx-auto max-w-2xl text-center">
+            <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-100">
+              <Sparkles className="h-8 w-8 text-indigo-600" />
             </div>
-            <p className="mt-3 font-display text-3xl font-bold text-slate-900">{briefTotal}</p>
-            <p className="text-sm text-slate-500">total briefs generated</p>
-            <p className="mt-1 text-xs text-slate-400">Open briefs from the Articles card</p>
+            <h2 className="font-display text-2xl font-bold text-slate-900">
+              Content Creation Awaits
+            </h2>
+            <p className="mt-4 text-base leading-relaxed text-slate-600">
+              The <strong>Content</strong> page will populate with briefs and articles once your first{" "}
+              <strong>keyword discovery phase</strong> has been completed. Discovery is where the magic begins—researching
+              keywords, creating topics, and running research loops.
+            </p>
+            <div className="mt-8">
+              <Link to={`/projects/${project.id}/discovery`}>
+                <Button size="lg" className="gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  Go to Discovery
+                </Button>
+              </Link>
+            </div>
           </div>
         </div>
-
-        <Link
-          to={contentDetailsHref}
-          className="group block rounded-2xl border-2 border-black border-l-4 border-l-violet-500 bg-white shadow-[4px_4px_0_#1a1a1a] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_#1a1a1a]"
-        >
-          <div className="p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
-                <BookOpen className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="font-display text-lg font-bold text-slate-900">Articles</p>
-              </div>
-            </div>
-            <p className="mt-3 font-display text-3xl font-bold text-slate-900">{articleTotal}</p>
-            <p className="text-sm text-slate-500">articles rendered</p>
-            {articleTotal > 0 ? (
-              <p className="mt-1 text-xs text-slate-400">
-                {articlesCompleted} completed{articlesInProgress > 0 ? `, ${articlesInProgress} in progress` : ""}
-              </p>
-            ) : null}
-            <p className="mt-1 text-xs text-slate-400">Open briefs and article previews</p>
-          </div>
-        </Link>
-
-        {latestRun ? (
-          <div className="rounded-2xl border-2 border-black border-l-4 border-l-amber-500 bg-white shadow-[4px_4px_0_#1a1a1a]">
-            <div className="p-5">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
-                  <PenSquare className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="font-display text-lg font-bold text-slate-900">Drafting</p>
-                </div>
-              </div>
-              <p className="mt-3 font-display text-3xl font-bold text-slate-900">{contentRuns.length}</p>
-              <p className="text-sm text-slate-500">{contentRuns.length === 1 ? "drafting process" : "drafting processes"}</p>
-              <p className="mt-2 text-xs text-slate-500">
-                Latest status: {formatStatusLabel(effectiveStatus)}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-500">
-                <PenSquare className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="font-display text-lg font-bold text-slate-400">Drafting</p>
-              </div>
-            </div>
-            <p className="mt-3 text-sm text-slate-400">No drafting processes yet. Waiting for backend orchestration.</p>
-          </div>
-        )}
-      </div>
-
-      {/* Drafting processes */}
-      {contentRuns.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Drafting processes</CardTitle>
-            <CardDescription>In-progress processes are pinned to the top.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {sortedContentRuns.map((run) => {
-              const runStatus = getRunStatus(run);
-              const runProgress = getRunProgress(run);
-              const runProgressLabel = Math.round(runProgress);
-              const runIsInProgress = runProgress > 0 && runProgress < 100;
-              const runIsActive = isRunActive(runStatus);
-
-              return (
-                <div key={run.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span
-                    className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(runStatus)}`}
-                  >
-                    {formatStatusLabel(runStatus)}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    <Link to={`/projects/${project.id}/creation/runs/${run.id}`}>
-                      <Button type="button" variant="outline" size="sm">
-                        View progress
-                      </Button>
-                    </Link>
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="pausePipeline" />
-                      <input type="hidden" name="run_id" value={run.id} />
-                      <Button type="submit" variant="outline" size="sm" disabled={!runIsActive}>
-                        Pause
-                      </Button>
-                    </Form>
-                    <Form method="post">
-                      <input type="hidden" name="intent" value="resumePipeline" />
-                      <input type="hidden" name="run_id" value={run.id} />
-                      <Button
-                        type="submit"
-                        variant="outline"
-                        size="sm"
-                        disabled={!isRunPaused(runStatus) && !isRunFailed(runStatus)}
-                      >
-                        Resume
-                      </Button>
-                    </Form>
+      ) : (
+        <>
+          {/* Stat cards */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="rounded-2xl border-2 border-black border-l-4 border-l-indigo-500 bg-white shadow-[4px_4px_0_#1a1a1a]">
+              <div className="p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-display text-lg font-bold text-slate-900">Briefs</p>
                   </div>
                 </div>
-                <div className="mt-3">
-                  <Progress value={runProgress} />
+                <p className="mt-3 font-display text-3xl font-bold text-slate-900">{briefTotal}</p>
+                <p className="text-sm text-slate-500">total briefs generated</p>
+                <p className="mt-1 text-xs text-slate-400">Open briefs from the Articles card</p>
+              </div>
+            </div>
+
+            <Link
+              to={contentDetailsHref}
+              className="group block rounded-2xl border-2 border-black border-l-4 border-l-violet-500 bg-white shadow-[4px_4px_0_#1a1a1a] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[6px_6px_0_#1a1a1a]"
+            >
+              <div className="p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                    <BookOpen className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-display text-lg font-bold text-slate-900">Articles</p>
+                  </div>
                 </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                  {runIsInProgress ? <p>Current step: {getRunStepLabel(run)}</p> : <span />}
-                  <p>{runProgressLabel}%</p>
+                <p className="mt-3 font-display text-3xl font-bold text-slate-900">{articleTotal}</p>
+                <p className="text-sm text-slate-500">articles rendered</p>
+                {articleTotal > 0 ? (
+                  <p className="mt-1 text-xs text-slate-400">
+                    {articlesCompleted} completed{articlesInProgress > 0 ? `, ${articlesInProgress} in progress` : ""}
+                  </p>
+                ) : null}
+                <p className="mt-1 text-xs text-slate-400">Open briefs and article previews</p>
+              </div>
+            </Link>
+
+            {latestRun ? (
+              <div className="rounded-2xl border-2 border-black border-l-4 border-l-amber-500 bg-white shadow-[4px_4px_0_#1a1a1a]">
+                <div className="p-5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+                      <PenSquare className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-display text-lg font-bold text-slate-900">Drafting</p>
+                    </div>
+                  </div>
+                  <p className="mt-3 font-display text-3xl font-bold text-slate-900">{contentRuns.length}</p>
+                  <p className="text-sm text-slate-500">{contentRuns.length === 1 ? "drafting process" : "drafting processes"}</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Latest status: {formatStatusLabel(effectiveStatus)}
+                  </p>
                 </div>
               </div>
-              );
-            })}
-          </CardContent>
-        </Card>
+            ) : (
+              <div className="rounded-2xl border-2 border-slate-200 bg-slate-50 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-200 text-slate-500">
+                    <PenSquare className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="font-display text-lg font-bold text-slate-400">Drafting</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-sm text-slate-400">No drafting processes yet. Waiting for backend orchestration.</p>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Drafting processes - only show when there's content */}
+      {briefTotal > 0 || articleTotal > 0 ? (
+        contentRuns.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Drafting processes</CardTitle>
+              <CardDescription>In-progress processes are pinned to the top.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {sortedContentRuns.map((run) => {
+                const runStatus = getRunStatus(run);
+                const runProgress = getRunProgress(run);
+                const runProgressLabel = Math.round(runProgress);
+                const runIsInProgress = runProgress > 0 && runProgress < 100;
+                const runStatusLower = (runStatus ?? "").toLowerCase();
+                const runIsCompleted =
+                  runProgress >= 100 || runStatusLower === "completed" || runStatusLower === "success" || runStatusLower === "done";
+                const runPrimaryBriefId = runPrimaryBriefIdByRunId[run.id];
+                const runActionHref =
+                  runIsCompleted && runPrimaryBriefId
+                    ? `/projects/${project.id}/creation/runs/${run.id}/briefs/${runPrimaryBriefId}`
+                    : `/projects/${project.id}/creation/runs/${run.id}`;
+                const runActionLabel = runIsCompleted && runPrimaryBriefId ? "View article" : "View progress";
+                const articleName = getArticleName(run);
+
+                return (
+                  <div key={run.id} className="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold ${getStatusBadgeClass(runStatus)}`}
+                        >
+                          {formatStatusLabel(runStatus)}
+                        </span>
+                        {articleName && (
+                          <span className="text-sm font-medium text-slate-700">{articleName}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Link to={runActionHref}>
+                          <Button type="button" variant="outline" size="sm">
+                            {runActionLabel}
+                          </Button>
+                        </Link>
+                      </div>
+                    </div>
+                    <div className="mt-3">
+                      <Progress value={runProgress} />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                      {runIsInProgress ? <p>Current step: {getRunStepLabel(run)}</p> : <span />}
+                      <p>{runProgressLabel}%</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        ) : null
       ) : null}
     </div>
   );
