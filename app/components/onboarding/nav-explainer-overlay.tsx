@@ -14,6 +14,8 @@ type NavStep = {
   navigateTo?: string;
 };
 
+const DISCOVERY_TARGET = "__DISCOVERY__";
+
 const NAV_STEPS: NavStep[] = [
   {
     id: "active-project",
@@ -87,7 +89,7 @@ const NAV_STEPS: NavStep[] = [
     focusSelector: '[data-nav-id="settings"]',
     title: "Settings",
     highlight: "nav",
-    nextLabel: "Show me settings",
+    nextLabel: "Go to settings",
     description: (
       <>
         Open <strong className="text-slate-800">Settings</strong> to manage your API key, webhooks,
@@ -102,21 +104,40 @@ const NAV_STEPS: NavStep[] = [
     title: "Install DonkeySEO Client",
     highlight: "element",
     navigateTo: "/settings?onboardingTab=ai-guide",
+    nextLabel: "Back to discovery",
     description: (
       <>
         This <strong className="text-slate-800">Copy Integration Guide</strong> button gives you the
-        agent code and setup instructions. Click it, then paste that code into your coding agent
-        (Claude Code, ChatGPT, or similar) to install the DonkeySEO client integration.
+        agent code and setup instructions. Click it, then give that copied code to your coding
+        agent (Claude Code, ChatGPT, or similar) to install the DonkeySEO client integration.
+      </>
+    ),
+  },
+  {
+    id: "back-to-discovery",
+    focusSelector: '[data-nav-id="discovery"]',
+    title: "All Set",
+    highlight: "nav",
+    navigateTo: DISCOVERY_TARGET,
+    nextLabel: "Finish tour",
+    description: (
+      <>
+        Everything is configured. You are back in{" "}
+        <strong className="text-slate-800">Discovery</strong> while your run continues in progress.
+        If you need help, use the <strong className="text-slate-800">support toggle</strong> in the
+        bottom-left of the navigation bar.
       </>
     ),
   },
 ];
 
 type NavExplainerOverlayProps = {
+  discoveryPath: string;
   onComplete: () => void;
 };
 
 export function NavExplainerOverlay({
+  discoveryPath,
   onComplete,
 }: NavExplainerOverlayProps) {
   const navigate = useNavigate();
@@ -130,11 +151,17 @@ export function NavExplainerOverlay({
     setMounted(true);
   }, []);
 
+  const resolveTarget = (target: string) => {
+    if (target === DISCOVERY_TARGET) return discoveryPath;
+    return target;
+  };
+
   const navigateIfNeeded = (target: string) => {
-    const [targetPath, targetQuery = ""] = target.split("?");
+    const resolvedTarget = resolveTarget(target);
+    const [targetPath, targetQuery = ""] = resolvedTarget.split("?");
     const targetSearch = targetQuery ? `?${targetQuery}` : "";
     if (location.pathname === targetPath && location.search === targetSearch) return;
-    navigate(target, { replace: true });
+    navigate(resolvedTarget, { replace: true });
   };
 
   const goToStep = (nextIndex: number) => {
@@ -144,6 +171,16 @@ export function NavExplainerOverlay({
     }
     setStepIndex(nextIndex);
   };
+
+  useEffect(() => {
+    const currentStep = NAV_STEPS[stepIndex];
+    if (!currentStep?.navigateTo) return;
+    const resolvedTarget = resolveTarget(currentStep.navigateTo);
+    const [targetPath, targetQuery = ""] = resolvedTarget.split("?");
+    const targetSearch = targetQuery ? `?${targetQuery}` : "";
+    if (location.pathname === targetPath && location.search === targetSearch) return;
+    navigateIfNeeded(currentStep.navigateTo);
+  }, [stepIndex, discoveryPath, location.pathname, location.search]);
 
   // Highlight the current focus target
   useEffect(() => {
@@ -259,7 +296,7 @@ export function NavExplainerOverlay({
               )}
               {isLast ? (
                 <Button type="button" size="lg" onClick={onComplete}>
-                  Let's get started!
+                  {step.nextLabel ?? "Let's get started!"}
                 </Button>
               ) : (
                 <Button

@@ -363,6 +363,8 @@ function DashboardLayoutInner({
     textShadow: "-1px -1px 0 #111827, 1px -1px 0 #111827, -1px 1px 0 #111827, 1px 1px 0 #111827",
   };
   const navUsagePercent = clampPercent(entitlements.usage?.usage_percent ?? 0);
+  const discoveryTargetProjectId = onboarding.state.projectId ?? activeProjectId;
+  const discoveryPath = discoveryTargetProjectId ? `/projects/${discoveryTargetProjectId}/discovery` : "/project";
 
   const switchDisabledReason = !entitlements.canManageMultipleProjects
     ? "Upgrade to Growth or Agency to switch between projects."
@@ -850,6 +852,7 @@ function DashboardLayoutInner({
 
       {onboarding.isPhase("nav_explainer") && (
         <NavExplainerOverlay
+          discoveryPath={discoveryPath}
           onComplete={() => onboarding.advance()}
         />
       )}

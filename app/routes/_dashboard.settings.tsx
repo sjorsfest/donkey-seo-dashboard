@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Form, Link, data, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { motion } from "framer-motion";
-import { Check, Loader2, RefreshCw, Key, Webhook, Bot, Copy, ChevronDown, ChevronUp } from "lucide-react";
+import { Check, Loader2, RefreshCw, Key, Webhook, Bot, Copy, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { Badge } from "~/components/ui/badge";
-import { Button } from "~/components/ui/button";
+import { Button, buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
 import { readApiErrorMessage } from "~/lib/api-error";
@@ -25,11 +25,13 @@ type LoaderData = {
   activeProject: ProjectSummary | null;
   fullProject: ProjectResponse | null;
   guideContent: string | null;
+  documentationUrl: string;
 };
 
 type ActionData = {
   error?: string;
   success?: string;
+  guideContent?: string;
   generatedKey?: ProjectApiKeyResponse;
   generatedWebhookSecret?: ProjectWebhookSecretResponse;
   webhookSaved?: boolean;
@@ -38,6 +40,17 @@ type ActionData = {
 type SettingsTab = "overview" | "api-keys" | "webhooks" | "ai-guide";
 
 const ACTIVE_PROJECT_SESSION_KEY = "activeProjectId";
+const INTEGRATION_GUIDE_PATH = "/integration/guide/donkey-client.md";
+
+function buildDocumentationUrl(request: Request) {
+  const envBase = process.env.API_BASE_URL?.trim();
+
+  if (envBase && (envBase.startsWith("http://") || envBase.startsWith("https://"))) {
+    return `${new URL(envBase).origin}/documentation`;
+  }
+
+  return `${new URL(request.url).origin}/documentation`;
+}
 
 function normalizeSessionProjectId(value: unknown) {
   if (typeof value !== "string") return null;
@@ -55,6 +68,7 @@ function parseOnboardingTab(value: string | null): SettingsTab | null {
 export async function loader({ request }: { request: Request }) {
   const api = new ApiClient(request);
   await api.requireUser();
+  const documentationUrl = buildDocumentationUrl(request);
 
   const projectsResponse = await api.fetch("/projects/?page=1&page_size=100");
   if (projectsResponse.status === 401) {
@@ -102,7 +116,7 @@ export async function loader({ request }: { request: Request }) {
   }
 
   // Fetch guide content
-  const guideResponse = await api.fetch("/guide/donkey-client.md");
+  const guideResponse = await api.fetch(INTEGRATION_GUIDE_PATH);
   if (guideResponse.ok) {
     guideContent = await guideResponse.text();
   }
@@ -113,6 +127,7 @@ export async function loader({ request }: { request: Request }) {
       activeProject,
       fullProject,
       guideContent,
+      documentationUrl,
     } satisfies LoaderData,
     {
       headers: await api.commit(),
@@ -124,6 +139,56 @@ export async function action({ request }: { request: Request }) {
   const api = new ApiClient(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
+
+  if (intent === "fetch_integration_guide") {
+    let response: Response;
+
+    try {
+      response = await api.fetch(INTEGRATION_GUIDE_PATH);
+    } catch {
+      return data(
+        {
+          error: "Unable to contact the API right now. Please try again.",
+        } satisfies ActionData,
+        {
+          status: 502,
+          headers: await api.commit(),
+        }
+      );
+    }
+
+    if (response.status === 401) {
+      return redirect("/login", {
+        headers: {
+          "Set-Cookie": await api.logout(),
+        },
+      });
+    }
+
+    if (!response.ok) {
+      const apiMessage = await readApiErrorMessage(response);
+      return data(
+        {
+          error: apiMessage ?? "Unable to load the integration guide right now.",
+        } satisfies ActionData,
+        {
+          status: response.status,
+          headers: await api.commit(),
+        }
+      );
+    }
+
+    const guideContent = await response.text();
+
+    return data(
+      {
+        guideContent,
+      } satisfies ActionData,
+      {
+        headers: await api.commit(),
+      }
+    );
+  }
 
   const projectId = String(formData.get("projectId") ?? "").trim();
   if (!projectId) {
@@ -332,7 +397,7 @@ export async function action({ request }: { request: Request }) {
 }
 
 export default function DashboardSettingsRoute() {
-  const { projects, activeProject, fullProject, guideContent } = useLoaderData<typeof loader>() as LoaderData;
+  const { projects, activeProject, fullProject, guideContent, documentationUrl } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
@@ -341,7 +406,8 @@ export default function DashboardSettingsRoute() {
   const [activeTab, setActiveTab] = useState<SettingsTab>(onboardingTab ?? "overview");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [webhookCopyState, setWebhookCopyState] = useState<"idle" | "copied" | "error">("idle");
-  const [guideCopyState, setGuideCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [guideCopyState, setGuideCopyState] = useState<"idle" | "loading" | "copied" | "error">("idle");
+  const [guidePreviewContent, setGuidePreviewContent] = useState(guideContent);
   const [guideExpanded, setGuideExpanded] = useState(false);
 
   // Type assertion for settings - ProjectResponse schema doesn't include settings in types but API returns it
@@ -377,6 +443,10 @@ export default function DashboardSettingsRoute() {
     setActiveTab(onboardingTab);
   }, [onboardingTab]);
 
+  useEffect(() => {
+    setGuidePreviewContent(guideContent);
+  }, [guideContent]);
+
   const handleCopyKey = async () => {
     if (!generatedKey?.api_key) return;
     try {
@@ -398,11 +468,28 @@ export default function DashboardSettingsRoute() {
   };
 
   const handleCopyGuide = async () => {
-    if (!guideContent) return;
+    setGuideCopyState("loading");
+
     try {
-      await navigator.clipboard.writeText(guideContent);
+      const response = await fetch(`${window.location.pathname}${window.location.search}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        body: new URLSearchParams({
+          intent: "fetch_integration_guide",
+        }),
+      });
+
+      const payload = (await response.json()) as ActionData;
+      if (!response.ok || !payload.guideContent) {
+        throw new Error(payload.error ?? "Failed to load integration guide.");
+      }
+
+      await navigator.clipboard.writeText(payload.guideContent);
+      setGuidePreviewContent(payload.guideContent);
       setGuideCopyState("copied");
-      setTimeout(() => setGuideCopyState("idle"), 2000);
+      setTimeout(() => setGuideCopyState("idle"), 3000);
     } catch {
       setGuideCopyState("error");
     }
@@ -941,12 +1028,17 @@ const isValid = hmac === signatureHeader;`}</code>
                     <Button
                       data-onboarding-focus="settings-ai-guide-copy"
                       onClick={handleCopyGuide}
-                      disabled={!guideContent}
+                      disabled={guideCopyState === "loading"}
                     >
-                      {guideCopyState === "copied" ? (
+                      {guideCopyState === "loading" ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Copying Guide...
+                        </>
+                      ) : guideCopyState === "copied" ? (
                         <>
                           <Check className="mr-2 h-4 w-4" />
-                          Copied to Clipboard!
+                          Copied agent instructions. Paste in your agent.
                         </>
                       ) : (
                         <>
@@ -955,6 +1047,15 @@ const isValid = hmac === signatureHeader;`}</code>
                         </>
                       )}
                     </Button>
+                    <a
+                      href={documentationUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={buttonVariants({ variant: "outline" })}
+                    >
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Open API Documentation
+                    </a>
                     {guideCopyState === "error" && <p className="text-xs text-rose-700">Copy failed. Try again.</p>}
                   </div>
 
@@ -963,7 +1064,7 @@ const isValid = hmac === signatureHeader;`}</code>
                     <ol className="mt-2 space-y-1 text-xs">
                       <li>1. Click "Copy Integration Guide" above</li>
                       <li>2. Open your coding agent (Claude Code, ChatGPT, or similar)</li>
-                      <li>3. Paste the copied agent code and setup instructions</li>
+                      <li>3. Paste the copied agent instructions into your agent</li>
                       <li>
                         4. Ask it to install or generate the DonkeySEO integration you need
                       </li>
@@ -971,7 +1072,7 @@ const isValid = hmac === signatureHeader;`}</code>
                   </div>
 
                   {/* Guide Preview */}
-                  {guideContent && (
+                  {guidePreviewContent && (
                     <div>
                       <button
                         onClick={() => setGuideExpanded(!guideExpanded)}
@@ -984,7 +1085,7 @@ const isValid = hmac === signatureHeader;`}</code>
                       {guideExpanded && (
                         <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
                           <pre className="max-h-96 overflow-auto whitespace-pre-wrap font-mono text-xs text-slate-700">
-                            {guideContent}
+                            {guidePreviewContent}
                           </pre>
                         </div>
                       )}
