@@ -32,6 +32,10 @@ type ProjectOnboardingBootstrapRequest = components["schemas"]["ProjectOnboardin
 type ProjectOnboardingBootstrapResponse = components["schemas"]["ProjectOnboardingBootstrapResponse"];
 type TaskStatusResponse = components["schemas"]["TaskStatusResponse"];
 type BrandVisualContextResponse = components["schemas"]["BrandVisualContextResponse"];
+type AuthorCreate = components["schemas"]["AuthorCreate"];
+type AuthorResponse = components["schemas"]["AuthorResponse"];
+type AuthorProfileImageSignedUploadRequest = components["schemas"]["AuthorProfileImageSignedUploadRequest"];
+type AuthorProfileImageSignedUploadResponse = components["schemas"]["AuthorProfileImageSignedUploadResponse"];
 
 type LoaderData = {
   step: 1 | 2 | 3 | 4;
@@ -57,21 +61,39 @@ type ActionData = {
 
 type AuthorDraft = {
   id: string;
+  persisted_author_id: string;
   name: string;
   bio: string;
   website_url: string;
   linkedin_url: string;
   twitter_url: string;
   profile_image_source_url: string;
+  profile_image_object_key: string;
+  profile_image_mime_type: string;
 };
 
 type SubmittedOnboardingAuthor = {
+  persisted_author_id: string | null;
   name: string;
   bio: string | null;
   website_url: string | null;
   linkedin_url: string | null;
   twitter_url: string | null;
   profile_image_source_url: string | null;
+  profile_image_object_key: string | null;
+  profile_image_mime_type: string | null;
+};
+
+type AuthorImageUploadActionResponse = {
+  error?: string;
+  author_client_id?: string;
+  author_id?: string;
+  upload?: AuthorProfileImageSignedUploadResponse;
+};
+
+type AuthorImageUploadStatus = {
+  state: "idle" | "preparing" | "uploading" | "uploaded" | "error";
+  message?: string;
 };
 
 type TaskStatusLoaderData = {
@@ -124,23 +146,29 @@ function parseSetupPreset(value: string): SetupPreset {
 function createEmptyAuthorDraft(id: string): AuthorDraft {
   return {
     id,
+    persisted_author_id: "",
     name: "",
     bio: "",
     website_url: "",
     linkedin_url: "",
     twitter_url: "",
     profile_image_source_url: "",
+    profile_image_object_key: "",
+    profile_image_mime_type: "",
   };
 }
 
 function hasAuthorDraftContent(author: AuthorDraft): boolean {
   return [
+    author.persisted_author_id,
     author.name,
     author.bio,
     author.website_url,
     author.linkedin_url,
     author.twitter_url,
     author.profile_image_source_url,
+    author.profile_image_object_key,
+    author.profile_image_mime_type,
   ].some((value) => value.trim().length > 0);
 }
 
@@ -164,6 +192,70 @@ function normalizeOptionalUrl(value: unknown): string | null {
   }
 }
 
+function parseOnboardingAuthorRecord(value: unknown, index: number): { author: SubmittedOnboardingAuthor | null; error: string | null } {
+  if (!value || typeof value !== "object") return { author: null, error: null };
+
+  const record = value as Record<string, unknown>;
+  const persistedAuthorId = normalizeOptionalString(record.persisted_author_id);
+  const bio = normalizeOptionalString(record.bio);
+  const rawWebsiteUrl = normalizeOptionalString(record.website_url) ?? normalizeOptionalString(record.blog_url);
+  const rawLinkedinUrl = normalizeOptionalString(record.linkedin_url);
+  const rawTwitterUrl = normalizeOptionalString(record.twitter_url) ?? normalizeOptionalString(record.x_url);
+  const rawProfileImageSourceUrl = normalizeOptionalString(record.profile_image_source_url);
+  const profileImageObjectKey = normalizeOptionalString(record.profile_image_object_key);
+  const profileImageMimeType = normalizeOptionalString(record.profile_image_mime_type);
+  const name = normalizeOptionalString(record.name);
+
+  if (!name) {
+    if (
+      persistedAuthorId ||
+      bio ||
+      rawWebsiteUrl ||
+      rawLinkedinUrl ||
+      rawTwitterUrl ||
+      rawProfileImageSourceUrl ||
+      profileImageObjectKey ||
+      profileImageMimeType
+    ) {
+      return { author: null, error: `Author ${index + 1}: name is required when other details are provided.` };
+    }
+    return { author: null, error: null };
+  }
+
+  const websiteUrl = rawWebsiteUrl ? normalizeOptionalUrl(rawWebsiteUrl) : null;
+  const linkedinUrl = rawLinkedinUrl ? normalizeOptionalUrl(rawLinkedinUrl) : null;
+  const twitterUrl = rawTwitterUrl ? normalizeOptionalUrl(rawTwitterUrl) : null;
+  const profileImageSourceUrl = rawProfileImageSourceUrl ? normalizeOptionalUrl(rawProfileImageSourceUrl) : null;
+
+  if (rawWebsiteUrl && !websiteUrl) {
+    return { author: null, error: `Author ${index + 1}: blog URL must be a valid URL.` };
+  }
+  if (rawLinkedinUrl && !linkedinUrl) {
+    return { author: null, error: `Author ${index + 1}: LinkedIn URL must be a valid URL.` };
+  }
+  if (rawTwitterUrl && !twitterUrl) {
+    return { author: null, error: `Author ${index + 1}: X/Twitter URL must be a valid URL.` };
+  }
+  if (rawProfileImageSourceUrl && !profileImageSourceUrl) {
+    return { author: null, error: `Author ${index + 1}: profile image URL must be a valid URL.` };
+  }
+
+  return {
+    author: {
+      persisted_author_id: persistedAuthorId,
+      name,
+      bio,
+      website_url: websiteUrl,
+      linkedin_url: linkedinUrl,
+      twitter_url: twitterUrl,
+      profile_image_source_url: profileImageSourceUrl,
+      profile_image_object_key: profileImageObjectKey,
+      profile_image_mime_type: profileImageMimeType,
+    },
+    error: null,
+  };
+}
+
 function parseOnboardingAuthors(rawAuthors: string): { authors: SubmittedOnboardingAuthor[]; error: string | null } {
   let parsed: unknown = [];
 
@@ -181,55 +273,34 @@ function parseOnboardingAuthors(rawAuthors: string): { authors: SubmittedOnboard
   const seenNames = new Set<string>();
 
   for (const [index, value] of parsed.entries()) {
-    if (!value || typeof value !== "object") continue;
+    const { author, error } = parseOnboardingAuthorRecord(value, index);
+    if (error) return { authors: [], error };
+    if (!author) continue;
 
-    const record = value as Record<string, unknown>;
-    const bio = normalizeOptionalString(record.bio);
-    const rawWebsiteUrl = normalizeOptionalString(record.website_url) ?? normalizeOptionalString(record.blog_url);
-    const rawLinkedinUrl = normalizeOptionalString(record.linkedin_url);
-    const rawTwitterUrl = normalizeOptionalString(record.twitter_url) ?? normalizeOptionalString(record.x_url);
-    const rawProfileImageSourceUrl = normalizeOptionalString(record.profile_image_source_url);
-    const name = normalizeOptionalString(record.name);
-    if (!name) {
-      if (bio || rawWebsiteUrl || rawLinkedinUrl || rawTwitterUrl || rawProfileImageSourceUrl) {
-        return { authors: [], error: `Author ${index + 1}: name is required when other details are provided.` };
-      }
-      continue;
-    }
-
-    const dedupeKey = name.toLowerCase();
+    const dedupeKey = author.name.toLowerCase();
     if (seenNames.has(dedupeKey)) continue;
     seenNames.add(dedupeKey);
 
-    const websiteUrl = rawWebsiteUrl ? normalizeOptionalUrl(rawWebsiteUrl) : null;
-    const linkedinUrl = rawLinkedinUrl ? normalizeOptionalUrl(rawLinkedinUrl) : null;
-    const twitterUrl = rawTwitterUrl ? normalizeOptionalUrl(rawTwitterUrl) : null;
-    const profileImageSourceUrl = rawProfileImageSourceUrl ? normalizeOptionalUrl(rawProfileImageSourceUrl) : null;
-
-    if (rawWebsiteUrl && !websiteUrl) {
-      return { authors: [], error: `Author ${index + 1}: blog URL must be a valid URL.` };
-    }
-    if (rawLinkedinUrl && !linkedinUrl) {
-      return { authors: [], error: `Author ${index + 1}: LinkedIn URL must be a valid URL.` };
-    }
-    if (rawTwitterUrl && !twitterUrl) {
-      return { authors: [], error: `Author ${index + 1}: X/Twitter URL must be a valid URL.` };
-    }
-    if (rawProfileImageSourceUrl && !profileImageSourceUrl) {
-      return { authors: [], error: `Author ${index + 1}: profile image URL must be a valid URL.` };
-    }
-
-    authors.push({
-      name,
-      bio,
-      website_url: websiteUrl,
-      linkedin_url: linkedinUrl,
-      twitter_url: twitterUrl,
-      profile_image_source_url: profileImageSourceUrl,
-    });
+    authors.push(author);
   }
 
   return { authors: authors.slice(0, 8), error: null };
+}
+
+function buildAuthorMutationPayload(author: SubmittedOnboardingAuthor): AuthorCreate {
+  const payload: AuthorCreate = {
+    name: author.name,
+  };
+
+  if (author.bio) payload.bio = author.bio;
+  const socialUrls: Record<string, string> = {};
+  if (author.website_url) socialUrls.website = author.website_url;
+  if (author.linkedin_url) socialUrls.linkedin = author.linkedin_url;
+  if (author.twitter_url) socialUrls.twitter = author.twitter_url;
+  if (Object.keys(socialUrls).length > 0) payload.social_urls = socialUrls;
+  if (author.profile_image_source_url) payload.profile_image_source_url = author.profile_image_source_url;
+
+  return payload;
 }
 
 function stringifyUnknownValue(value: unknown): string | null {
@@ -650,17 +721,25 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     for (const author of parsedAuthors.authors) {
-      const payload: Record<string, unknown> = {
-        name: author.name,
-      };
+      const payload = buildAuthorMutationPayload(author);
 
-      if (author.bio) payload.bio = author.bio;
-      const socialUrls: Record<string, string> = {};
-      if (author.website_url) socialUrls.website = author.website_url;
-      if (author.linkedin_url) socialUrls.linkedin = author.linkedin_url;
-      if (author.twitter_url) socialUrls.twitter = author.twitter_url;
-      if (Object.keys(socialUrls).length > 0) payload.social_urls = socialUrls;
-      if (author.profile_image_source_url) payload.profile_image_source_url = author.profile_image_source_url;
+      if (author.persisted_author_id) {
+        const updateAuthorResponse = await api.fetch(`/authors/${projectId}/${author.persisted_author_id}`, {
+          method: "PATCH",
+          json: payload,
+        });
+
+        if (updateAuthorResponse.status === 401) return handleUnauthorized(api);
+
+        if (!updateAuthorResponse.ok) {
+          const apiMessage = await readApiErrorMessage(updateAuthorResponse);
+          return data(
+            { error: apiMessage ?? "Unable to update project authors." } satisfies ActionData,
+            { status: updateAuthorResponse.status, headers: await api.commit() }
+          );
+        }
+        continue;
+      }
 
       const createAuthorResponse = await api.fetch(`/authors/${projectId}`, {
         method: "POST",
@@ -685,6 +764,121 @@ export async function action({ request }: Route.ActionArgs) {
         setupRunId,
         setupTaskId,
       }),
+      { headers: await api.commit() }
+    );
+  }
+
+  if (intent === "prepareAuthorImageUpload") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    const authorClientId = String(formData.get("author_client_id") ?? "").trim();
+    const authorJson = String(formData.get("author_json") ?? "").trim();
+    const contentType = String(formData.get("content_type") ?? "").trim();
+
+    if (!projectId || !authorClientId || !authorJson || !contentType) {
+      return data(
+        { error: "Missing image upload context." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    if (!contentType.toLowerCase().startsWith("image/")) {
+      return data(
+        { error: "Profile image must be a valid image MIME type." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    let parsedAuthorValue: unknown;
+    try {
+      parsedAuthorValue = JSON.parse(authorJson);
+    } catch {
+      return data(
+        { error: "Invalid author payload." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const { author, error } = parseOnboardingAuthorRecord(parsedAuthorValue, 0);
+    if (error || !author) {
+      return data(
+        { error: error ?? "Author details are required before uploading an image." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    let authorId = author.persisted_author_id;
+    const authorPayload = buildAuthorMutationPayload(author);
+
+    if (authorId) {
+      const updateAuthorResponse = await api.fetch(`/authors/${projectId}/${authorId}`, {
+        method: "PATCH",
+        json: authorPayload,
+      });
+
+      if (updateAuthorResponse.status === 401) return handleUnauthorized(api);
+
+      if (!updateAuthorResponse.ok) {
+        const apiMessage = await readApiErrorMessage(updateAuthorResponse);
+        return data(
+          { error: apiMessage ?? "Unable to prepare author image upload." } satisfies AuthorImageUploadActionResponse,
+          { status: updateAuthorResponse.status, headers: await api.commit() }
+        );
+      }
+    } else {
+      const createAuthorResponse = await api.fetch(`/authors/${projectId}`, {
+        method: "POST",
+        json: authorPayload,
+      });
+
+      if (createAuthorResponse.status === 401) return handleUnauthorized(api);
+
+      if (!createAuthorResponse.ok) {
+        const apiMessage = await readApiErrorMessage(createAuthorResponse);
+        return data(
+          { error: apiMessage ?? "Unable to create author before image upload." } satisfies AuthorImageUploadActionResponse,
+          { status: createAuthorResponse.status, headers: await api.commit() }
+        );
+      }
+
+      const createdAuthor = (await createAuthorResponse.json()) as AuthorResponse;
+      authorId = createdAuthor.id;
+    }
+
+    if (!authorId) {
+      return data(
+        { error: "Unable to determine author ID for image upload." } satisfies AuthorImageUploadActionResponse,
+        { status: 500, headers: await api.commit() }
+      );
+    }
+
+    const signedUploadPayload: AuthorProfileImageSignedUploadRequest = {
+      content_type: contentType,
+    };
+    const signedUploadResponse = await api.fetch(
+      `/authors/${projectId}/${authorId}/profile-image/signed-upload-url`,
+      {
+        method: "POST",
+        json: signedUploadPayload,
+      }
+    );
+
+    if (signedUploadResponse.status === 401) return handleUnauthorized(api);
+
+    if (!signedUploadResponse.ok) {
+      const apiMessage = await readApiErrorMessage(signedUploadResponse);
+      return data(
+        { error: apiMessage ?? "Unable to mint a signed upload URL." } satisfies AuthorImageUploadActionResponse,
+        { status: signedUploadResponse.status, headers: await api.commit() }
+      );
+    }
+
+    const upload = (await signedUploadResponse.json()) as AuthorProfileImageSignedUploadResponse;
+    return data(
+      {
+        author_client_id: authorClientId,
+        author_id: authorId,
+        upload,
+      } satisfies AuthorImageUploadActionResponse,
       { headers: await api.commit() }
     );
   }
@@ -715,6 +909,9 @@ export default function ProjectSetupRoute() {
   const [authors, setAuthors] = useState<AuthorDraft[]>([createEmptyAuthorDraft("author-1")]);
   const authorImageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [authorImageFileNames, setAuthorImageFileNames] = useState<Record<string, string>>({});
+  const [authorImagePreviewUrls, setAuthorImagePreviewUrls] = useState<Record<string, string>>({});
+  const authorImagePreviewUrlsRef = useRef<Record<string, string>>({});
+  const [authorImageUploadStatuses, setAuthorImageUploadStatuses] = useState<Record<string, AuthorImageUploadStatus>>({});
 
   const onboarding = useOnboarding();
   const [welcomeStep, setWelcomeStep] = useState<"intro" | "focus" | "done">("intro");
@@ -732,16 +929,24 @@ export default function ProjectSetupRoute() {
     const normalizedAuthors = authors
       .filter((author) => hasAuthorDraftContent(author))
       .map((author) => ({
+        persisted_author_id: author.persisted_author_id.trim(),
         name: author.name.trim(),
         bio: author.bio.trim(),
         website_url: author.website_url.trim(),
         linkedin_url: author.linkedin_url.trim(),
         twitter_url: author.twitter_url.trim(),
         profile_image_source_url: author.profile_image_source_url.trim(),
+        profile_image_object_key: author.profile_image_object_key.trim(),
+        profile_image_mime_type: author.profile_image_mime_type.trim(),
       }));
 
     return JSON.stringify(normalizedAuthors);
   }, [authors]);
+  const hasPendingAuthorImageUpload = useMemo(() => {
+    return Object.values(authorImageUploadStatuses).some(
+      (status) => status.state === "preparing" || status.state === "uploading"
+    );
+  }, [authorImageUploadStatuses]);
 
   const task = taskFetcher.data?.task ?? null;
   const taskStatus = String(task?.status ?? "").toLowerCase();
@@ -815,6 +1020,18 @@ export default function ProjectSetupRoute() {
   useEffect(() => {
     brandFetcherStateRef.current = brandFetcher.state;
   }, [brandFetcher.state]);
+
+  useEffect(() => {
+    authorImagePreviewUrlsRef.current = authorImagePreviewUrls;
+  }, [authorImagePreviewUrls]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(authorImagePreviewUrlsRef.current).forEach((url) => {
+        URL.revokeObjectURL(url);
+      });
+    };
+  }, []);
 
   useEffect(() => {
     brandPollAttemptsRef.current = 0;
@@ -952,14 +1169,143 @@ export default function ProjectSetupRoute() {
     authorImageInputRefs.current[authorId]?.click();
   }
 
-  function handleAuthorImageFileChange(authorId: string, files: FileList | null) {
+  async function handleAuthorImageFileChange(authorId: string, files: FileList | null) {
     const file = files?.[0] ?? null;
     if (!file) return;
+
+    const authorDraft = authors.find((author) => author.id === authorId);
+    if (!authorDraft) return;
+
+    if (!projectId) {
+      setAuthorImageUploadStatuses((previous) => ({
+        ...previous,
+        [authorId]: { state: "error", message: "Project context is missing. Please refresh and try again." },
+      }));
+      return;
+    }
+
+    if (!authorDraft.name.trim()) {
+      setAuthorImageUploadStatuses((previous) => ({
+        ...previous,
+        [authorId]: { state: "error", message: "Add the author name before uploading a profile image." },
+      }));
+      return;
+    }
 
     setAuthorImageFileNames((previous) => ({
       ...previous,
       [authorId]: file.name,
     }));
+
+    setAuthorImageUploadStatuses((previous) => ({
+      ...previous,
+      [authorId]: { state: "preparing", message: "Requesting secure upload URL..." },
+    }));
+
+    const authorPayload = {
+      persisted_author_id: authorDraft.persisted_author_id.trim(),
+      name: authorDraft.name.trim(),
+      bio: authorDraft.bio.trim(),
+      website_url: authorDraft.website_url.trim(),
+      linkedin_url: authorDraft.linkedin_url.trim(),
+      twitter_url: authorDraft.twitter_url.trim(),
+      profile_image_source_url: authorDraft.profile_image_source_url.trim(),
+      profile_image_object_key: authorDraft.profile_image_object_key.trim(),
+      profile_image_mime_type: authorDraft.profile_image_mime_type.trim(),
+    };
+
+    const formPayload = new FormData();
+    formPayload.set("intent", "prepareAuthorImageUpload");
+    formPayload.set("project_id", projectId);
+    formPayload.set("author_client_id", authorId);
+    formPayload.set("author_json", JSON.stringify(authorPayload));
+    formPayload.set("content_type", file.type || "application/octet-stream");
+
+    let uploadPreparation: AuthorImageUploadActionResponse | null = null;
+    try {
+      const prepareResponse = await fetch(window.location.pathname + window.location.search, {
+        method: "POST",
+        body: formPayload,
+        credentials: "same-origin",
+      });
+
+      uploadPreparation = (await prepareResponse.json()) as AuthorImageUploadActionResponse;
+      if (!prepareResponse.ok || !uploadPreparation.upload || !uploadPreparation.author_id) {
+        throw new Error(uploadPreparation.error ?? "Unable to prepare image upload.");
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to prepare image upload.";
+      setAuthorImageUploadStatuses((previous) => ({
+        ...previous,
+        [authorId]: { state: "error", message },
+      }));
+      return;
+    }
+
+    setAuthors((previous) =>
+      previous.map((author) =>
+        author.id === authorId
+          ? {
+              ...author,
+              persisted_author_id: uploadPreparation.author_id ?? author.persisted_author_id,
+              profile_image_object_key: uploadPreparation.upload?.object_key ?? author.profile_image_object_key,
+              profile_image_mime_type: file.type || author.profile_image_mime_type,
+            }
+          : author
+      )
+    );
+
+    setAuthorImageUploadStatuses((previous) => ({
+      ...previous,
+      [authorId]: { state: "uploading", message: "Uploading image..." },
+    }));
+
+    try {
+      const uploadHeaders = new Headers();
+      const requiredHeaders = uploadPreparation.upload.required_headers ?? {};
+      for (const [key, value] of Object.entries(requiredHeaders)) {
+        uploadHeaders.set(key, value);
+      }
+      if (file.type && !uploadHeaders.has("Content-Type")) {
+        uploadHeaders.set("Content-Type", file.type);
+      }
+
+      const uploadResponse = await fetch(uploadPreparation.upload.upload_url, {
+        method: uploadPreparation.upload.upload_method || "PUT",
+        headers: uploadHeaders,
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Image upload failed (${uploadResponse.status}).`);
+      }
+
+      const previewUrl = URL.createObjectURL(file);
+      setAuthorImagePreviewUrls((previous) => {
+        const priorPreviewUrl = previous[authorId];
+        if (priorPreviewUrl) {
+          URL.revokeObjectURL(priorPreviewUrl);
+        }
+        return {
+          ...previous,
+          [authorId]: previewUrl,
+        };
+      });
+      setAuthorImageUploadStatuses((previous) => ({
+        ...previous,
+        [authorId]: { state: "uploaded", message: "Image uploaded successfully." },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Image upload failed.";
+      setAuthorImageUploadStatuses((previous) => ({
+        ...previous,
+        [authorId]: { state: "error", message },
+      }));
+    }
+
+    if (authorImageInputRefs.current[authorId]) {
+      authorImageInputRefs.current[authorId]!.value = "";
+    }
   }
 
   const stepLabels = ["Basic project info", "Strategy + SEO inputs", "Authors (optional)", "Setup progress"];
@@ -1325,14 +1671,47 @@ export default function ProjectSetupRoute() {
                             type="file"
                             accept="image/*"
                             className="hidden"
-                            onChange={(event) => handleAuthorImageFileChange(author.id, event.target.files)}
+                            onChange={(event) => {
+                              void handleAuthorImageFileChange(author.id, event.target.files);
+                            }}
                           />
-                          <Button type="button" variant="outline" onClick={() => triggerAuthorImagePicker(author.id)}>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => triggerAuthorImagePicker(author.id)}
+                            disabled={authorImageUploadStatuses[author.id]?.state === "preparing" || authorImageUploadStatuses[author.id]?.state === "uploading"}
+                          >
                             <Upload className="mr-2 h-4 w-4" />
                             Upload image
                           </Button>
                           <span className="text-xs text-slate-500">{authorImageFileNames[author.id] ?? "No file selected"}</span>
                         </div>
+                        {authorImagePreviewUrls[author.id] ? (
+                          <img
+                            src={authorImagePreviewUrls[author.id]}
+                            alt={`${author.name || "Author"} profile preview`}
+                            className="h-20 w-20 rounded-full border border-slate-200 object-cover"
+                          />
+                        ) : null}
+                        {authorImageUploadStatuses[author.id]?.message ? (
+                          <p
+                            className={`text-xs ${
+                              authorImageUploadStatuses[author.id]?.state === "error"
+                                ? "font-semibold text-rose-700"
+                                : "text-slate-600"
+                            }`}
+                          >
+                            {authorImageUploadStatuses[author.id]?.message}
+                          </p>
+                        ) : null}
+                        {author.persisted_author_id && author.profile_image_object_key ? (
+                          <p className="text-[11px] text-slate-400">
+                            Stored object: {author.profile_image_object_key}
+                          </p>
+                        ) : null}
+                        <p className="text-[11px] text-slate-500">
+                          Uploads use a signed URL and are sent directly from your browser.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1357,7 +1736,7 @@ export default function ProjectSetupRoute() {
                   Back
                 </Button>
               </Link>
-              <Button type="submit" size="lg" disabled={isSubmitting}>
+              <Button type="submit" size="lg" disabled={isSubmitting || hasPendingAuthorImageUpload}>
                 {isSubmitting ? "Saving..." : "Continue to scraping"}
               </Button>
             </div>

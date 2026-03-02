@@ -1075,6 +1075,26 @@ export interface paths {
         patch: operations["update_author_api_v1_authors__project_id___author_id__patch"];
         trace?: never;
     };
+    "/api/v1/authors/{project_id}/{author_id}/profile-image/signed-upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get signed upload URL for author profile image
+         * @description Mint a short-lived signed PUT URL so clients can upload a profile image directly.
+         */
+        post: operations["get_author_profile_image_signed_upload_url_api_v1_authors__project_id___author_id__profile_image_signed_upload_url_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1156,6 +1176,37 @@ export interface components {
             items: components["schemas"]["AuthorResponse"][];
             /** Total */
             total: number;
+        };
+        /**
+         * AuthorProfileImageSignedUploadRequest
+         * @description Request payload to mint a signed author profile-image upload URL.
+         */
+        AuthorProfileImageSignedUploadRequest: {
+            /** Content Type */
+            content_type: string;
+        };
+        /**
+         * AuthorProfileImageSignedUploadResponse
+         * @description Signed upload URL details for direct client upload.
+         */
+        AuthorProfileImageSignedUploadResponse: {
+            /** Author Id */
+            author_id: string;
+            /** Object Key */
+            object_key: string;
+            /**
+             * Upload Method
+             * @default PUT
+             */
+            upload_method: string;
+            /** Upload Url */
+            upload_url: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Required Headers */
+            required_headers?: {
+                [key: string]: string;
+            };
         };
         /**
          * AuthorResponse
@@ -1538,6 +1589,11 @@ export interface components {
              * Format: date-time
              */
             generated_at: string;
+            primary_pillar?: components["schemas"]["ContentPillarReference"] | null;
+            /** Secondary Pillars */
+            secondary_pillars?: components["schemas"]["ContentPillarReference"][];
+            /** Pillar Assignment Confidence */
+            pillar_assignment_confidence?: number | null;
             /**
              * Created At
              * Format: date-time
@@ -1609,6 +1665,11 @@ export interface components {
              * Format: date-time
              */
             generated_at: string;
+            primary_pillar?: components["schemas"]["ContentPillarReference"] | null;
+            /** Secondary Pillars */
+            secondary_pillars?: components["schemas"]["ContentPillarReference"][];
+            /** Pillar Assignment Confidence */
+            pillar_assignment_confidence?: number | null;
             /**
              * Created At
              * Format: date-time
@@ -1827,6 +1888,8 @@ export interface components {
          * @description Schema for updating a content brief.
          */
         ContentBriefUpdate: {
+            /** Primary Keyword */
+            primary_keyword?: string | null;
             /** Working Titles */
             working_titles?: string[] | null;
             /** Outline */
@@ -1895,6 +1958,18 @@ export interface components {
         ContentCalendarResponse: {
             /** Items */
             items: components["schemas"]["ContentCalendarItemResponse"][];
+        };
+        /**
+         * ContentPillarReference
+         * @description Pillar reference for article responses.
+         */
+        ContentPillarReference: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
         };
         /**
          * ContentPipelineConfig
@@ -5021,6 +5096,7 @@ export interface operations {
                 page?: number;
                 page_size?: number;
                 status?: string | null;
+                pillar_slug?: string | null;
             };
             header?: never;
             path: {
@@ -5437,6 +5513,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuthorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_author_profile_image_signed_upload_url_api_v1_authors__project_id___author_id__profile_image_signed_upload_url_post: {
+        parameters: {
+            query?: {
+                ttl_seconds?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                author_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthorProfileImageSignedUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthorProfileImageSignedUploadResponse"];
                 };
             };
             /** @description Validation Error */

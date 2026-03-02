@@ -89,6 +89,13 @@ function isWithinRunWindow(timestamp: string, windowStartMs: number | null, wind
   return true;
 }
 
+function formatConfidencePercent(value: number | null | undefined): string | null {
+  if (typeof value !== "number" || Number.isNaN(value)) return null;
+  const rawPercent = value <= 1 ? value * 100 : value;
+  const normalized = Math.max(0, Math.min(100, rawPercent));
+  return `${Math.round(normalized)}% confidence`;
+}
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const projectId = params.projectId;
   const runId = params.runId;
@@ -356,6 +363,12 @@ function BriefRow({
   runId: string;
   projectId: string;
 }) {
+  const primaryPillar = article?.primary_pillar?.name?.trim() || null;
+  const secondaryPillars = (article?.secondary_pillars ?? [])
+    .map((pillar) => pillar.name?.trim())
+    .filter((pillar): pillar is string => Boolean(pillar));
+  const pillarConfidence = formatConfidencePercent(article?.pillar_assignment_confidence);
+
   return (
     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 transition-colors hover:border-slate-300">
       <div className="flex items-center justify-between gap-3">
@@ -384,6 +397,21 @@ function BriefRow({
         <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
           <p className="font-medium text-slate-800">{article.title}</p>
           <p className="text-xs text-slate-400">/{article.slug} · v{article.current_version}</p>
+          {primaryPillar || secondaryPillars.length > 0 || pillarConfidence ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {primaryPillar ? (
+                <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                  Primary: {primaryPillar}
+                </span>
+              ) : null}
+              {secondaryPillars.map((pillar) => (
+                <span key={pillar} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-700">
+                  Secondary: {pillar}
+                </span>
+              ))}
+              {pillarConfidence ? <span className="text-[11px] text-slate-500">{pillarConfidence}</span> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
