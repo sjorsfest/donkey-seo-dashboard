@@ -1,10 +1,11 @@
 import { useEffect, useRef } from "react";
-import { Link, Form, data, redirect, useActionData, useFetcher, useLoaderData, useRevalidator } from "react-router";
+import { Link, Form, data, redirect, useActionData, useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Search, Layers, RefreshCw } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.discovery";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
+import { useOnboarding } from "~/components/onboarding/onboarding-context";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
@@ -345,12 +346,22 @@ export default function ProjectDiscoveryHubRoute() {
   } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const revalidator = useRevalidator();
+  const [searchParams] = useSearchParams();
+  const onboarding = useOnboarding();
+  const isNewlyCreated = searchParams.get("created") === "1";
 
   const progressFetcher = useFetcher<PipelineProgressResponse>();
   const isProgressRequestInFlightRef = useRef(false);
 
   const liveProgress = progressFetcher.data ?? latestRunProgress;
   const effectiveStatus = liveProgress?.status ?? latestRun?.status ?? null;
+
+  // Advance onboarding once discovery is opened after setup.
+  useEffect(() => {
+    if (!onboarding.isPhase("setup_progress")) return;
+    if (!isNewlyCreated && onboarding.state.projectId !== project.id) return;
+    onboarding.advance({ runId: latestRun?.id ?? undefined });
+  }, [isNewlyCreated, onboarding, project.id, latestRun?.id]);
 
   useEffect(() => {
     isProgressRequestInFlightRef.current = progressFetcher.state !== "idle";

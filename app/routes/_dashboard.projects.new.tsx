@@ -1573,7 +1573,7 @@ export default function ProjectSetupRoute() {
             </Link>
 
             {projectId && isTaskCompleted ? (
-              <Link to={`/projects/${projectId}/discovery`}>
+              <Link to={`/projects/${projectId}/discovery?created=1`}>
                 <Button type="button" size="lg">
                   Open discovery
                 </Button>
