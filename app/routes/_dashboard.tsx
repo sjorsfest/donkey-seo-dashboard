@@ -188,7 +188,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const maxProjects = resolvedPlan ? PLAN_PROJECT_LIMIT[resolvedPlan] : 1;
   const canManageMultipleProjects = hasProPlan && (resolvedPlan === "growth" || resolvedPlan === "agency");
   const canCreateAdditionalProject = canManageMultipleProjects && projectCount >= 0 && projectCount < maxProjects;
-  const supportAccountId = "cmlpg6zlb0004ts09q6rgq7u6" || process.env.SUPPORT_ACCOUNT_ID || "";
+  const supportAccountId = process.env.SUPPORT_ACCOUNT_ID || "cmlpg6zlb0004ts09q6rgq7u6";
   const supportWidgetMetadataSigningSecret = process.env.SUPPORT_WIDGET_METADATA_SIGNING_SECRET ?? "";
   const supportWidgetMetadata = {
     plan: hasProPlan ? "pro" : "freemium",

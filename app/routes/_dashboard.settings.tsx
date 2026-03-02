@@ -434,7 +434,7 @@ export default function DashboardSettingsRoute() {
   const integrationExampleProjectId = activeProject?.id ?? "<project_id>";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="space-y-6">
       {/* Header Section */}
       <motion.section
         initial={{ opacity: 0, y: 8 }}
@@ -442,24 +442,17 @@ export default function DashboardSettingsRoute() {
         transition={{ duration: 0.22 }}
         className="rounded-3xl border border-slate-200 bg-gradient-to-r from-white via-[#eef5ff] to-[#f4fbf8] p-6 shadow-[0_20px_45px_-30px_rgba(15,23,42,0.55)]"
       >
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4f5f9d]">Project Credentials</p>
-              <Badge variant={hasWebhook ? "success" : "muted"} className="text-[10px]">
-                {hasWebhook ? "✓ Webhook" : "Webhook"}
-              </Badge>
-              {activeProject && <Badge variant="muted" className="text-[10px]">Active: {activeProject.name}</Badge>}
-            </div>
-            <h1 className="mt-2 font-display text-3xl font-bold text-slate-900">Settings</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Manage your project integration credentials, webhook configuration, and access the AI agent integration guide.
-            </p>
-          </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#4f5f9d]">Project Credentials</p>
+          <h1 className="mt-2 font-display text-3xl font-bold text-slate-900">Settings</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Manage your project integration credentials, webhook configuration, and access the AI agent integration guide.
+          </p>
         </div>
       </motion.section>
 
-      {/* Error/Success Messages */}
+      <div className="mx-auto max-w-5xl space-y-6">
+        {/* Error/Success Messages */}
       {actionData?.error && (
         <Card className="border-rose-300 bg-rose-50">
           <CardContent className="pt-5 text-sm font-semibold text-rose-700">{actionData.error}</CardContent>
@@ -1032,6 +1025,7 @@ const isValid = hmac === signatureHeader;`}</code>
           </TabsContent>
         )}
       </Tabs>
+      </div>
     </div>
   );
 }

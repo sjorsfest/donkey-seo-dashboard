@@ -1573,11 +1573,12 @@ export default function ProjectSetupRoute() {
             </Link>
 
             {projectId && isTaskCompleted ? (
-              <Link to={`/projects/${projectId}/discovery?created=1`}>
-                <Button type="button" size="lg">
+              <Form method="post" action={`/projects/${projectId}/discovery`}>
+                <input type="hidden" name="intent" value="startDiscoveryFromSetup" />
+                <Button type="submit" size="lg">
                   Open discovery
                 </Button>
-              </Link>
+              </Form>
             ) : (
               <Button type="button" size="lg" disabled>
                 Waiting for setup completion

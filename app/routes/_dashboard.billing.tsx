@@ -404,7 +404,7 @@ export default function BillingRoute() {
   const windowLabel = usage?.window_kind === "lifetime" ? "Lifetime" : "This month";
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
       {/* Header Section */}
       <motion.section
         initial={{ opacity: 0, y: 8 }}
@@ -419,7 +419,8 @@ export default function BillingRoute() {
         </div>
       </motion.section>
 
-      {/* Checkout result banners */}
+      <div className="mx-auto max-w-3xl space-y-6">
+        {/* Checkout result banners */}
       {result === "success" && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
@@ -685,6 +686,7 @@ export default function BillingRoute() {
             );
           })}
         </div>
+      </div>
       </div>
     </div>
   );

@@ -170,8 +170,29 @@ export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
 
-  if (intent !== "pausePipeline" && intent !== "resumePipeline") {
+  if (intent !== "pausePipeline" && intent !== "resumePipeline" && intent !== "startDiscoveryFromSetup") {
     return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
+  }
+
+  if (intent === "startDiscoveryFromSetup") {
+    const startResponse = await api.fetch(`/pipeline/${projectId}/start`, {
+      method: "POST",
+      json: { mode: "discovery" },
+    });
+
+    if (startResponse.status === 401) return handleUnauthorized(api);
+
+    if (!startResponse.ok && startResponse.status !== 409) {
+      const apiMessage = await readApiErrorMessage(startResponse);
+      return data(
+        { error: apiMessage ?? "Unable to start discovery pipeline." } satisfies ActionData,
+        { status: startResponse.status, headers: await api.commit() }
+      );
+    }
+
+    return redirect(`/projects/${projectId}/discovery?created=1`, {
+      headers: await api.commit(),
+    });
   }
 
   if (intent === "pausePipeline") {
