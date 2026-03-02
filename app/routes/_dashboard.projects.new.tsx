@@ -19,7 +19,6 @@ import {
   suggestProjectNameFromDomain,
 } from "~/lib/dashboard";
 import { COUNTRY_OPTIONS, countryToLocale } from "~/lib/onboarding";
-import { fetchJson } from "~/lib/pipeline-run.server";
 import { useOnboarding } from "~/components/onboarding/onboarding-context";
 import { OnboardingOverlay } from "~/components/onboarding/onboarding-overlay";
 import { DonkeyBubble } from "~/components/onboarding/donkey-bubble";
