@@ -486,6 +486,32 @@ export default function DashboardSettingsRoute() {
           <TabsContent>
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
               <div className="grid gap-4 md:grid-cols-2">
+                <Card className="md:col-span-2">
+                  <CardHeader>
+                    <CardTitle>Active Project</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {activeProject ? (
+                      <div className="space-y-1 text-sm text-slate-700">
+                        <p>
+                          <span className="font-semibold text-slate-900">Name:</span> {activeProject.name}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-900">Domain:</span> {activeProject.domain}
+                        </p>
+                        <p>
+                          <span className="font-semibold text-slate-900">Project ID:</span>{" "}
+                          <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800">
+                            {activeProject.id}
+                          </code>
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-600">No active project selected.</p>
+                    )}
+                  </CardContent>
+                </Card>
+
                 <Card>
                   <CardHeader>
                     <div className="flex items-center gap-2">

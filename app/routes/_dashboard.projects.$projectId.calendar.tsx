@@ -21,7 +21,7 @@ type CalendarState =
   | "brief_ready"
   | "writer_instructions_ready"
   | "article_ready"
-  | "article_needs_review"
+  | "publish_pending"
   | "published";
 
 type ContentCalendarItem = {
@@ -72,7 +72,7 @@ const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const CALENDAR_STATE_ORDER: CalendarState[] = [
   "published",
-  "article_needs_review",
+  "publish_pending",
   "article_ready",
   "writer_instructions_ready",
   "brief_ready",
@@ -88,8 +88,8 @@ const CALENDAR_STATE_META: Record<
     chipClass: "bg-emerald-100 text-emerald-800",
     badgeClass: "border-emerald-300 bg-emerald-100 text-emerald-900",
   },
-  article_needs_review: {
-    label: "Needs review",
+  publish_pending: {
+    label: "Publish pending",
     dotClass: "bg-rose-500",
     chipClass: "bg-rose-100 text-rose-800",
     badgeClass: "border-rose-300 bg-rose-100 text-rose-900",
@@ -172,7 +172,7 @@ function createEmptyStateCounts(): StateCounts {
     brief_ready: 0,
     writer_instructions_ready: 0,
     article_ready: 0,
-    article_needs_review: 0,
+    publish_pending: 0,
     published: 0,
   };
 }
@@ -364,7 +364,7 @@ export default function ProjectCalendarRoute() {
 
   const monthTotal = totalFromCounts(monthCounts);
   const monthDaysWithContent = countsByDate.size;
-  const monthNeedAttention = monthCounts.article_needs_review;
+  const monthPublishPending = monthCounts.publish_pending;
   const monthPreArticle = monthCounts.writer_instructions_ready + monthCounts.brief_ready;
 
   return (
@@ -428,8 +428,8 @@ export default function ProjectCalendarRoute() {
         </Card>
         <Card className="border-rose-300/60 bg-gradient-to-br from-white to-rose-50">
           <CardContent className="pt-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Needs review</p>
-            <p className="mt-2 font-display text-3xl font-bold text-slate-900">{monthNeedAttention}</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Publish pending</p>
+            <p className="mt-2 font-display text-3xl font-bold text-slate-900">{monthPublishPending}</p>
           </CardContent>
         </Card>
         <Card className="border-amber-300/60 bg-gradient-to-br from-white to-amber-50">
@@ -569,8 +569,8 @@ export default function ProjectCalendarRoute() {
               <p className="font-display text-2xl font-bold text-emerald-900">{selectedDateCounts.published}</p>
             </div>
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
-              <p className="text-xs font-semibold uppercase text-rose-700">Needs review</p>
-              <p className="font-display text-2xl font-bold text-rose-900">{selectedDateCounts.article_needs_review}</p>
+              <p className="text-xs font-semibold uppercase text-rose-700">Publish pending</p>
+              <p className="font-display text-2xl font-bold text-rose-900">{selectedDateCounts.publish_pending}</p>
             </div>
             <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
               <p className="text-xs font-semibold uppercase text-sky-700">Article ready</p>

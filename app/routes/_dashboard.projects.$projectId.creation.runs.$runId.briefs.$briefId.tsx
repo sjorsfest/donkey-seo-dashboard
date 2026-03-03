@@ -1,4 +1,4 @@
-import { Link, data, redirect, useLoaderData } from "react-router";
+import { Form, Link, data, redirect, useActionData, useLoaderData, useNavigation } from "react-router";
 import { RefreshCw, Info } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.creation.runs.$runId.briefs.$briefId";
 import { Button } from "~/components/ui/button";
@@ -6,6 +6,7 @@ import { Badge } from "~/components/ui/badge";
 import { Card, CardContent } from "~/components/ui/card";
 import { Tooltip } from "~/components/ui/tooltip";
 import { ArticleViewer, ArticleEmptyState } from "~/components/article-viewer";
+import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime, isRunActive } from "~/lib/dashboard";
 import { fetchJson } from "~/lib/pipeline-run.server";
@@ -22,6 +23,11 @@ type LoaderData = {
   brief: ContentBriefDetailResponse;
   article: ContentArticleDetailResponse | null;
   runIsActive: boolean;
+  publishedTriggered: boolean;
+};
+
+type ActionData = {
+  error?: string;
 };
 
 type KeywordCoverageSummary = {
@@ -130,6 +136,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const projectId = params.projectId;
   const runId = params.runId;
   const briefId = params.briefId;
+  const requestUrl = new URL(request.url);
+  const publishedTriggered = requestUrl.searchParams.get("published") === "1";
 
   if (!projectId || !runId || !briefId) {
     throw new Response("Missing route parameters.", { status: 400 });
@@ -179,6 +187,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       brief: briefResult.data,
       article,
       runIsActive: isRunActive(runResult.data.status),
+      publishedTriggered,
     } satisfies LoaderData,
     {
       headers: await api.commit(),
@@ -186,9 +195,60 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
 }
 
+export async function action({ request, params }: Route.ActionArgs) {
+  const projectId = params.projectId;
+  if (!projectId) {
+    return data({ error: "Missing project id." } satisfies ActionData, { status: 400 });
+  }
+
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+  if (intent !== "publishNow") {
+    return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
+  }
+
+  const articleId = String(formData.get("article_id") ?? "").trim();
+  if (!articleId) {
+    return data({ error: "Missing article id." } satisfies ActionData, { status: 400 });
+  }
+
+  const api = new ApiClient(request);
+  const publishResponse = await api.fetch(`/content/${projectId}/articles/${articleId}/publish-now`, {
+    method: "POST",
+  });
+
+  if (publishResponse.status === 401) return handleUnauthorized(api);
+
+  if (!publishResponse.ok) {
+    const apiMessage = await readApiErrorMessage(publishResponse);
+    return data(
+      {
+        error:
+          apiMessage ??
+          (publishResponse.status === 409
+            ? "Article is not ready to publish right now."
+            : "Unable to publish article now."),
+      } satisfies ActionData,
+      { status: publishResponse.status, headers: await api.commit() },
+    );
+  }
+
+  const redirectUrl = new URL(request.url);
+  redirectUrl.searchParams.set("published", "1");
+
+  return redirect(`${redirectUrl.pathname}?${redirectUrl.searchParams.toString()}`, {
+    headers: await api.commit(),
+  });
+}
+
 export default function ProjectCreationBriefDetailRoute() {
-  const { project, selectedRun, brief, article, runIsActive } = useLoaderData<typeof loader>() as LoaderData;
+  const { project, selectedRun, brief, article, runIsActive, publishedTriggered } = useLoaderData<typeof loader>() as LoaderData;
+  const actionData = useActionData<typeof action>() as ActionData | undefined;
+  const navigation = useNavigation();
   const pillarConfidenceLabel = formatConfidencePercent(article?.pillar_assignment_confidence);
+  const isPublishingNow =
+    navigation.state !== "idle" && navigation.formData?.get("intent")?.toString() === "publishNow";
+  const publishButtonLabel = article?.publish_status === "published" ? "Republish now" : "Publish now";
 
   return (
     <div className="mx-auto max-w-[1240px] space-y-6">
@@ -253,15 +313,41 @@ export default function ProjectCreationBriefDetailRoute() {
                 ) : null}
               </div>
               {article ? (
-                <div className="flex items-center gap-2 text-sm text-slate-500">
-                  <Badge variant="success">v{article.current_version}</Badge>
-                  <span>{formatDateTime(article.generated_at)}</span>
-                  {article.generation_model ? (
-                    <span className="text-xs text-slate-400">({article.generation_model})</span>
-                  ) : null}
+                <div className="flex flex-wrap items-center justify-end gap-2 text-sm text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="success">v{article.current_version}</Badge>
+                    <span>{formatDateTime(article.generated_at)}</span>
+                    {article.generation_model ? (
+                      <span className="text-xs text-slate-400">({article.generation_model})</span>
+                    ) : null}
+                  </div>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="publishNow" />
+                    <input type="hidden" name="article_id" value={article.id} />
+                    <Button type="submit" size="sm" disabled={isPublishingNow}>
+                      {isPublishingNow ? (
+                        <>
+                          <RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          Publishing...
+                        </>
+                      ) : (
+                        publishButtonLabel
+                      )}
+                    </Button>
+                  </Form>
                 </div>
               ) : null}
             </div>
+            {publishedTriggered ? (
+              <div className="mt-3 rounded-xl border border-emerald-300/70 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                Publish webhook dispatched for this article.
+              </div>
+            ) : null}
+            {actionData?.error ? (
+              <div className="mt-3 rounded-xl border border-rose-300/70 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                {actionData.error}
+              </div>
+            ) : null}
             {article && (article.primary_pillar || (article.secondary_pillars?.length ?? 0) > 0) ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {article.primary_pillar ? <PillarBadge label={`Primary pillar: ${article.primary_pillar.name}`} /> : null}

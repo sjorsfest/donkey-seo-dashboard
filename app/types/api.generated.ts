@@ -883,6 +883,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/content/{project_id}/articles/{article_id}/publish-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish article now
+         * @description Set the article's brief publication date to the current call-day and dispatch its publication webhook immediately.
+         */
+        post: operations["publish_article_now_api_v1_content__project_id__articles__article_id__publish_now_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/content/{project_id}/briefs/{brief_id}/article": {
         parameters: {
             query?: never;
@@ -1630,6 +1650,35 @@ export interface components {
             page_size: number;
         };
         /**
+         * ContentArticlePublishNowResponse
+         * @description Response payload for immediate article publish webhook dispatch.
+         */
+        ContentArticlePublishNowResponse: {
+            /** Article Id */
+            article_id: string;
+            /** Brief Id */
+            brief_id: string;
+            /** Project Id */
+            project_id: string;
+            /**
+             * Proposed Publication Date
+             * Format: date
+             */
+            proposed_publication_date: string;
+            /** Webhook Delivery Id */
+            webhook_delivery_id: string | null;
+            /** Webhook Dispatch Triggered */
+            webhook_dispatch_triggered: boolean;
+            /** Webhook Delivery Status */
+            webhook_delivery_status: string | null;
+            /** Webhook Attempt Count */
+            webhook_attempt_count: number | null;
+            /** Webhook Last Http Status */
+            webhook_last_http_status: number | null;
+            /** Webhook Last Error */
+            webhook_last_error: string | null;
+        };
+        /**
          * ContentArticleResponse
          * @description Canonical content article summary.
          */
@@ -1949,7 +1998,7 @@ export interface components {
              * Calendar State
              * @enum {string}
              */
-            calendar_state: "brief_ready" | "writer_instructions_ready" | "article_ready" | "article_needs_review" | "published";
+            calendar_state: "brief_ready" | "writer_instructions_ready" | "article_ready" | "publish_pending" | "published";
         };
         /**
          * ContentCalendarResponse
@@ -1996,7 +2045,7 @@ export interface components {
             /**
              * Min Lead Days
              * @description Minimum days from today before the first proposed publish date.
-             * @default 7
+             * @default 3
              */
             min_lead_days: number;
             /**
@@ -2514,7 +2563,7 @@ export interface components {
          * @example {
          *       "content": {
          *         "max_briefs": 20,
-         *         "min_lead_days": 7,
+         *         "min_lead_days": 3,
          *         "posts_per_week": 3,
          *         "preferred_weekdays": [
          *           0,
@@ -5113,6 +5162,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContentArticleListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_article_now_api_v1_content__project_id__articles__article_id__publish_now_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                article_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentArticlePublishNowResponse"];
                 };
             };
             /** @description Validation Error */
