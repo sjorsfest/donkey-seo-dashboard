@@ -91,6 +91,11 @@ type AuthorImageUploadActionResponse = {
   upload?: AuthorProfileImageSignedUploadResponse;
 };
 
+type PreparedAuthorImageUpload = AuthorImageUploadActionResponse & {
+  author_id: string;
+  upload: AuthorProfileImageSignedUploadResponse;
+};
+
 type AuthorImageUploadStatus = {
   state: "idle" | "preparing" | "uploading" | "uploaded" | "error";
   message?: string;
@@ -896,6 +901,7 @@ export default function ProjectSetupRoute() {
 
   const taskFetcher = useFetcher<TaskStatusLoaderData>();
   const brandFetcher = useFetcher<BrandVisualContextLoaderData>();
+  const authorImagePreparationFetcher = useFetcher<AuthorImageUploadActionResponse>();
 
   const [domain, setDomain] = useState(prefill.domain);
   const [name, setName] = useState(prefill.name);
@@ -912,6 +918,10 @@ export default function ProjectSetupRoute() {
   const [authorImagePreviewUrls, setAuthorImagePreviewUrls] = useState<Record<string, string>>({});
   const authorImagePreviewUrlsRef = useRef<Record<string, string>>({});
   const [authorImageUploadStatuses, setAuthorImageUploadStatuses] = useState<Record<string, AuthorImageUploadStatus>>({});
+  const pendingAuthorImagePreparationRef = useRef<{
+    resolve: (response: PreparedAuthorImageUpload) => void;
+    reject: (reason: Error) => void;
+  } | null>(null);
 
   const onboarding = useOnboarding();
   const [welcomeStep, setWelcomeStep] = useState<"intro" | "focus" | "done">("intro");
@@ -1024,6 +1034,33 @@ export default function ProjectSetupRoute() {
   useEffect(() => {
     authorImagePreviewUrlsRef.current = authorImagePreviewUrls;
   }, [authorImagePreviewUrls]);
+
+  useEffect(() => {
+    if (authorImagePreparationFetcher.state !== "idle") return;
+
+    const pendingPreparation = pendingAuthorImagePreparationRef.current;
+    if (!pendingPreparation) return;
+
+    pendingAuthorImagePreparationRef.current = null;
+    const payload = authorImagePreparationFetcher.data;
+
+    if (!payload || !payload.upload || !payload.author_id) {
+      pendingPreparation.reject(new Error(payload?.error ?? "Unable to prepare image upload."));
+      return;
+    }
+
+    pendingPreparation.resolve(payload as PreparedAuthorImageUpload);
+  }, [authorImagePreparationFetcher.data, authorImagePreparationFetcher.state]);
+
+  useEffect(() => {
+    return () => {
+      const pendingPreparation = pendingAuthorImagePreparationRef.current;
+      if (!pendingPreparation) return;
+
+      pendingAuthorImagePreparationRef.current = null;
+      pendingPreparation.reject(new Error("Image upload preparation was interrupted."));
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1169,6 +1206,25 @@ export default function ProjectSetupRoute() {
     authorImageInputRefs.current[authorId]?.click();
   }
 
+  function prepareAuthorImageUpload(formPayload: FormData): Promise<PreparedAuthorImageUpload> {
+    if (pendingAuthorImagePreparationRef.current) {
+      return Promise.reject(new Error("Another image upload is already being prepared."));
+    }
+
+    return new Promise((resolve, reject) => {
+      pendingAuthorImagePreparationRef.current = { resolve, reject };
+      try {
+        authorImagePreparationFetcher.submit(formPayload, {
+          method: "post",
+          encType: "multipart/form-data",
+        });
+      } catch (error) {
+        pendingAuthorImagePreparationRef.current = null;
+        reject(error instanceof Error ? error : new Error("Unable to prepare image upload."));
+      }
+    });
+  }
+
   async function handleAuthorImageFileChange(authorId: string, files: FileList | null) {
     const file = files?.[0] ?? null;
     if (!file) return;
@@ -1221,18 +1277,9 @@ export default function ProjectSetupRoute() {
     formPayload.set("author_json", JSON.stringify(authorPayload));
     formPayload.set("content_type", file.type || "application/octet-stream");
 
-    let uploadPreparation: AuthorImageUploadActionResponse | null = null;
+    let uploadPreparation: PreparedAuthorImageUpload;
     try {
-      const prepareResponse = await fetch(window.location.pathname + window.location.search, {
-        method: "POST",
-        body: formPayload,
-        credentials: "same-origin",
-      });
-
-      uploadPreparation = (await prepareResponse.json()) as AuthorImageUploadActionResponse;
-      if (!prepareResponse.ok || !uploadPreparation.upload || !uploadPreparation.author_id) {
-        throw new Error(uploadPreparation.error ?? "Unable to prepare image upload.");
-      }
+      uploadPreparation = await prepareAuthorImageUpload(formPayload);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to prepare image upload.";
       setAuthorImageUploadStatuses((previous) => ({
