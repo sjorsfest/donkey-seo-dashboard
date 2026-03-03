@@ -197,6 +197,56 @@ function normalizeOptionalUrl(value: unknown): string | null {
   }
 }
 
+function normalizeTwitterProfileUrl(value: unknown): string | null {
+  const raw = normalizeOptionalString(value);
+  if (!raw) return null;
+
+  const stripped = raw.replace(/^@+/, "");
+  const withProtocol = /^https?:\/\//i.test(stripped)
+    ? stripped
+    : /^(?:www\.|mobile\.)?(?:x|twitter)\.com\//i.test(stripped)
+      ? `https://${stripped}`
+      : null;
+
+  if (!withProtocol) {
+    return /^[A-Za-z0-9_]{1,15}$/.test(stripped) ? `https://x.com/${stripped}` : null;
+  }
+
+  try {
+    const parsed = new URL(withProtocol);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+
+    const hostname = parsed.hostname.toLowerCase();
+    const isKnownXHost =
+      hostname === "x.com" ||
+      hostname === "www.x.com" ||
+      hostname === "twitter.com" ||
+      hostname === "www.twitter.com" ||
+      hostname === "mobile.twitter.com";
+
+    if (isKnownXHost) {
+      const firstPathSegment = parsed.pathname
+        .split("/")
+        .filter(Boolean)
+        .map((segment) => segment.replace(/^@+/, ""))[0];
+
+      if (!firstPathSegment || !/^[A-Za-z0-9_]{1,15}$/.test(firstPathSegment)) return null;
+      return `https://x.com/${firstPathSegment}`;
+    }
+
+    // Backward compatibility: old bug stored bare handles as hosts (e.g. https://jack).
+    const hostAsHandle = parsed.hostname.replace(/^@+/, "");
+    const pathSegments = parsed.pathname.split("/").filter(Boolean);
+    if (pathSegments.length === 0 && /^[A-Za-z0-9_]{1,15}$/.test(hostAsHandle)) {
+      return `https://x.com/${hostAsHandle}`;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function parseOnboardingAuthorRecord(value: unknown, index: number): { author: SubmittedOnboardingAuthor | null; error: string | null } {
   if (!value || typeof value !== "object") return { author: null, error: null };
 
@@ -229,7 +279,7 @@ function parseOnboardingAuthorRecord(value: unknown, index: number): { author: S
 
   const websiteUrl = rawWebsiteUrl ? normalizeOptionalUrl(rawWebsiteUrl) : null;
   const linkedinUrl = rawLinkedinUrl ? normalizeOptionalUrl(rawLinkedinUrl) : null;
-  const twitterUrl = rawTwitterUrl ? normalizeOptionalUrl(rawTwitterUrl) : null;
+  const twitterUrl = rawTwitterUrl ? normalizeTwitterProfileUrl(rawTwitterUrl) : null;
   const profileImageSourceUrl = rawProfileImageSourceUrl ? normalizeOptionalUrl(rawProfileImageSourceUrl) : null;
 
   if (rawWebsiteUrl && !websiteUrl) {
