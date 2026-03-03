@@ -1,9 +1,10 @@
 import { Link, data, redirect, useLoaderData } from "react-router";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Info } from "lucide-react";
 import type { Route } from "./+types/_dashboard.projects.$projectId.creation.runs.$runId.briefs.$briefId";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent } from "~/components/ui/card";
+import { Tooltip } from "~/components/ui/tooltip";
 import { ArticleViewer, ArticleEmptyState } from "~/components/article-viewer";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime, isRunActive } from "~/lib/dashboard";
@@ -117,57 +118,6 @@ function PillarBadge({ label }: { label: string }) {
   );
 }
 
-function ArticleInsightsPanel({ article }: { article: ContentArticleDetailResponse }) {
-  const keywordCoverage = parseKeywordCoverage(asRecord(article.qa_report));
-
-  if (!keywordCoverage) return null;
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Keyword coverage</p>
-      <div className="mt-2 space-y-1 text-sm text-slate-700">
-        {keywordCoverage.scorePercent !== null ? (
-          <p>
-            Coverage score: <span className="font-semibold">{Math.round(keywordCoverage.scorePercent)}%</span>
-          </p>
-        ) : null}
-        {keywordCoverage.coveredCount !== null && keywordCoverage.totalCount !== null ? (
-          <p>
-            Covered keywords:{" "}
-            <span className="font-semibold">
-              {Math.round(keywordCoverage.coveredCount)} / {Math.round(keywordCoverage.totalCount)}
-            </span>
-          </p>
-        ) : null}
-        {keywordCoverage.missingKeywords.length > 0 ? (
-          <div className="pt-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Missing</p>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {keywordCoverage.missingKeywords.slice(0, 6).map((keyword) => (
-                <span key={keyword} className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
-                  {keyword}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : null}
-        {keywordCoverage.scorePercent === null &&
-        keywordCoverage.coveredCount === null &&
-        keywordCoverage.totalCount === null &&
-        keywordCoverage.missingKeywords.length === 0 ? (
-          <div className="pt-1 text-xs text-slate-500">
-            {keywordCoverage.details.map((detail) => (
-              <p key={detail.key}>
-                {detail.key}: {detail.value}
-              </p>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
 async function handleUnauthorized(api: ApiClient) {
   return redirect("/login", {
     headers: {
@@ -269,7 +219,39 @@ export default function ProjectCreationBriefDetailRoute() {
             </div>
 
             <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200/80 pt-3">
-              <h2 className="font-display text-xl font-bold text-slate-900 lg:text-2xl">Article preview</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-display text-xl font-bold text-slate-900 lg:text-2xl">Article preview</h2>
+                {article && parseKeywordCoverage(asRecord(article.qa_report)) ? (
+                  (() => {
+                    const coverage = parseKeywordCoverage(asRecord(article.qa_report))!;
+                    return (
+                      <Tooltip content={
+                        <div className="space-y-1 text-left">
+                          <div className="font-semibold">Keyword Coverage</div>
+                          {coverage.scorePercent !== null ? (
+                            <div className="text-xs">
+                              Score: {Math.round(coverage.scorePercent)}%
+                            </div>
+                          ) : null}
+                          {coverage.coveredCount !== null && coverage.totalCount !== null ? (
+                            <div className="text-xs">
+                              {Math.round(coverage.coveredCount)} / {Math.round(coverage.totalCount)} keywords
+                            </div>
+                          ) : null}
+                          {coverage.missingKeywords.length > 0 ? (
+                            <div className="text-xs text-amber-200">
+                              Missing: {coverage.missingKeywords.slice(0, 3).join(", ")}
+                              {coverage.missingKeywords.length > 3 ? "..." : ""}
+                            </div>
+                          ) : null}
+                        </div>
+                      }>
+                        <Info className="h-5 w-5 text-slate-400 transition-colors hover:text-slate-600" />
+                      </Tooltip>
+                    );
+                  })()
+                ) : null}
+              </div>
               {article ? (
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <Badge variant="success">v{article.current_version}</Badge>
@@ -293,8 +275,7 @@ export default function ProjectCreationBriefDetailRoute() {
 
           {article && !runIsActive ? (
             /* Article exists, run done */
-            <CardContent className="space-y-4 px-4 pb-5 pt-4 sm:px-6 sm:pb-7 sm:pt-5 lg:px-10">
-              <ArticleInsightsPanel article={article} />
+            <CardContent className="px-4 pb-5 pt-4 sm:px-6 sm:pb-7 sm:pt-5 lg:px-10">
               <ArticleViewer document={article.modular_document} />
             </CardContent>
           ) : article && runIsActive ? (
@@ -304,7 +285,6 @@ export default function ProjectCreationBriefDetailRoute() {
                 <RefreshCw className="h-4 w-4 animate-spin text-amber-600" />
                 <p className="font-medium text-amber-800">Article may still be updating. Pipeline is running.</p>
               </div>
-              <ArticleInsightsPanel article={article} />
               <ArticleViewer document={article.modular_document} />
             </CardContent>
           ) : !article && runIsActive ? (
