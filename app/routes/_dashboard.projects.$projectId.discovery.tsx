@@ -278,74 +278,61 @@ const DISCOVERY_STEPS = [
   { number: 8, label: "SERP" },
 ] as const;
 
-type StepExecution = components["schemas"]["StepExecutionResponse"];
-
-const SUCCESS_STEP = new Set(["completed", "success", "succeeded", "done"]);
-
 function normalizeStepName(name: string): string {
   // Normalize step names for comparison (remove underscores, lowercase, take first word)
   return name.toLowerCase().replace(/[_-]/g, " ").split(" ")[0];
 }
 
+function getCurrentStepIndex(currentStepName: string | null): number {
+  if (!currentStepName) return -1;
+
+  const normalizedCurrent = normalizeStepName(currentStepName);
+  return DISCOVERY_STEPS.findIndex((s) => normalizeStepName(s.label) === normalizedCurrent);
+}
+
 function getStepState(
-  step: (typeof DISCOVERY_STEPS)[number],
-  currentStepName: string | null,
-  executions: StepExecution[],
-  isActive: boolean,
+  stepIndex: number,
+  currentStepIndex: number,
   overallProgress: number,
 ): "completed" | "running" | "idle" {
-  const exec = executions.find((e) => e.step_number === step.number);
-
-  // If the pipeline is not active and overall progress is 100%, mark all steps as completed
-  if (!isActive && overallProgress === 100) {
+  // If overall progress is 100%, mark all steps as completed
+  if (overallProgress === 100) {
     return "completed";
   }
 
-  // Check if this step is currently running based on the step name
-  if (isActive && currentStepName) {
-    const normalizedCurrent = normalizeStepName(currentStepName);
-    const normalizedLabel = normalizeStepName(step.label);
-    if (normalizedCurrent === normalizedLabel) {
-      return "running";
-    }
+  // If no current step, all are idle
+  if (currentStepIndex === -1) {
+    return "idle";
   }
 
-  // If the pipeline is active and we have a current step, mark steps after it as idle
-  if (isActive && currentStepName) {
-    const normalizedCurrent = normalizeStepName(currentStepName);
-    const currentStepIndex = DISCOVERY_STEPS.findIndex(
-      (s) => normalizeStepName(s.label) === normalizedCurrent
-    );
-    const thisStepIndex = DISCOVERY_STEPS.findIndex((s) => s.number === step.number);
-
-    // If this step comes after the current running step, it should be idle (not yet reached in this iteration)
-    if (currentStepIndex !== -1 && thisStepIndex > currentStepIndex) {
-      return "idle";
-    }
+  // Current step is running (orange)
+  if (stepIndex === currentStepIndex) {
+    return "running";
   }
 
-  // Check if the step is completed
-  if (exec && SUCCESS_STEP.has(exec.status.toLowerCase())) return "completed";
+  // Steps before current are completed (green)
+  if (stepIndex < currentStepIndex) {
+    return "completed";
+  }
 
+  // Steps after current are idle (grey)
   return "idle";
 }
 
 function DiscoveryStepTimeline({
   currentStepName,
-  steps,
-  isActive,
   overallProgress,
 }: {
   currentStepName: string | null;
-  steps: StepExecution[];
-  isActive: boolean;
   overallProgress: number;
 }) {
+  const currentStepIndex = getCurrentStepIndex(currentStepName);
+
   return (
     <div className="py-2">
       <div className="flex items-center">
         {DISCOVERY_STEPS.map((step, i) => {
-          const state = getStepState(step, currentStepName, steps, isActive, overallProgress);
+          const state = getStepState(i, currentStepIndex, overallProgress);
           return (
             <div key={step.number} className="flex items-center" style={{ flex: i < DISCOVERY_STEPS.length - 1 ? 1 : undefined }}>
               {/* Node */}
@@ -673,8 +660,6 @@ export default function ProjectDiscoveryHubRoute() {
               <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Discovery Pipeline Progress</p>
               <DiscoveryStepTimeline
                 currentStepName={liveProgress?.current_step_name ?? null}
-                steps={liveProgress?.steps ?? latestRun?.step_executions ?? []}
-                isActive={isRunActive(effectiveStatus)}
                 overallProgress={overallProgress}
               />
             </div>

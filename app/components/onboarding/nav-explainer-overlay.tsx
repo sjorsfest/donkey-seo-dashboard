@@ -90,45 +90,17 @@ const NAV_STEPS: NavStep[] = [
   {
     id: "settings-nav",
     focusSelector: '[data-nav-id="settings"]',
-    title: "Settings",
+    title: "You're All Set!",
     highlight: "nav",
-    nextLabel: "Go to settings",
-    description: (
-      <>
-        Open <strong className="text-slate-800">Settings</strong> to manage your API key, webhooks,
-        and the <strong className="text-slate-800">DonkeySEO client install guide</strong> for coding
-        agents.
-      </>
-    ),
-  },
-  {
-    id: "settings-ai-guide",
-    focusSelector: '[data-onboarding-focus="settings-ai-guide-card"]',
-    title: "Install DonkeySEO Client",
-    highlight: "element",
-    navigateTo: "/settings?onboardingTab=ai-guide",
-    nextLabel: "Back to discovery",
-    description: (
-      <>
-        This <strong className="text-slate-800">Copy Integration Guide</strong> button gives you the
-        agent code and setup instructions. Click it, then give that copied code to your coding
-        agent (Claude Code, ChatGPT, or similar) to install the DonkeySEO client integration.
-      </>
-    ),
-  },
-  {
-    id: "back-to-discovery",
-    focusSelector: '[data-nav-id="discovery"]',
-    title: "All Set",
-    highlight: "nav",
-    navigateTo: DISCOVERY_TARGET,
     nextLabel: "Finish tour",
     description: (
       <>
-        Everything is configured. You are back in{" "}
-        <strong className="text-slate-800">Discovery</strong> while your run continues in progress.
-        If you need help, use the <strong className="text-slate-800">support toggle</strong> in the
-        bottom-left of the navigation bar.
+        You now know the basics of DonkeySEO! If you need to manage your{" "}
+        <strong className="text-slate-800">API keys</strong>,{" "}
+        <strong className="text-slate-800">webhooks</strong>, or get the{" "}
+        <strong className="text-slate-800">AI agent integration guide</strong>, just click the{" "}
+        <strong className="text-slate-800">Settings toggle</strong> in the bottom-left corner of the
+        navigation. Happy content creating!
       </>
     ),
   },
