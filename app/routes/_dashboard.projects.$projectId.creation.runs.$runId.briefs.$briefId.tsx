@@ -6,6 +6,7 @@ import { Badge } from "~/components/ui/badge";
 import { Card, CardContent } from "~/components/ui/card";
 import { Tooltip } from "~/components/ui/tooltip";
 import { ArticleViewer, ArticleEmptyState } from "~/components/article-viewer";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime, isRunActive } from "~/lib/dashboard";
@@ -393,5 +394,23 @@ export default function ProjectCreationBriefDetailRoute() {
         </Card>
       </section>
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}/creation` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Brief detail unavailable"
+      description="The selected brief/article detail could not be loaded."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to content overview" : "Back to dashboard"}
+      retryLabel="Retry brief page"
+      showStatus
+    />
   );
 }

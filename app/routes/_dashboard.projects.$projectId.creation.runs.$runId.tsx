@@ -16,6 +16,7 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
@@ -743,5 +744,23 @@ export default function ProjectCreationRunRoute() {
         </section>
       )}
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}/creation` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Content run unavailable"
+      description="The selected content run could not be loaded."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to content overview" : "Back to dashboard"}
+      retryLabel="Retry run page"
+      showStatus
+    />
   );
 }

@@ -5,6 +5,7 @@ import type { Route } from "./+types/_dashboard.projects.$projectId.creation";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { ApiClient } from "~/lib/api.server";
 import {
   calculateOverallProgress,
@@ -471,5 +472,23 @@ export default function ProjectCreationHubRoute() {
         ) : null
       ) : null}
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}/creation` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Content overview unavailable"
+      description="The content hub failed to load for this project."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to content overview" : "Back to dashboard"}
+      retryLabel="Retry content page"
+      showStatus
+    />
   );
 }

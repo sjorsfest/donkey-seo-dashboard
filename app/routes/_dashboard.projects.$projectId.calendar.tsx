@@ -6,6 +6,7 @@ import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Drawer } from "~/components/ui/drawer";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime } from "~/lib/dashboard";
@@ -664,5 +665,23 @@ export default function ProjectCalendarRoute() {
         </div>
       </Drawer>
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}/calendar` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Calendar unavailable"
+      description="The publishing calendar could not be loaded for this project."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to calendar" : "Back to dashboard"}
+      retryLabel="Retry calendar"
+      showStatus
+    />
   );
 }

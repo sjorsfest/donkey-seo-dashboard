@@ -1,4 +1,6 @@
 import { Outlet } from "react-router";
+import type { Route } from "./+types/_auth";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 
 const features = [
   {
@@ -78,5 +80,20 @@ export default function AuthLayout() {
         </div>
       </div>
     </div>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="auth"
+      title="Login page unavailable"
+      description="The authentication screen failed to load correctly."
+      safeHref="/login"
+      safeLabel="Back to login"
+      retryLabel="Retry auth page"
+      showStatus
+    />
   );
 }

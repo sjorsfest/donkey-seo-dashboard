@@ -6,6 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
 import { Skeleton } from "~/components/ui/skeleton";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime, formatStatusLabel, getStatusBadgeClass, summarizeSteps } from "~/lib/dashboard";
 import { sortPipelineRunsNewest } from "~/lib/pipeline-module";
@@ -370,5 +371,23 @@ export default function ProjectDetailsRoute() {
         </Card>
       </section>
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Project overview unavailable"
+      description="This project page could not be loaded."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to project" : "Back to dashboard"}
+      retryLabel="Retry project page"
+      showStatus
+    />
   );
 }

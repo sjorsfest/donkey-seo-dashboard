@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Form, Link, data, redirect, useActionData, useLoaderData, useNavigation, useSearchParams } from "react-router";
 import { motion } from "framer-motion";
-import { Check, Loader2, RefreshCw, Key, Webhook, Bot, Copy, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { Check, Loader2, RefreshCw, Key, Webhook, Bot, Copy, ChevronDown, ChevronUp, ExternalLink, Eye, EyeOff } from "lucide-react";
+import type { Route } from "./+types/_dashboard.settings";
 import { Badge } from "~/components/ui/badge";
 import { Button, buttonVariants } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "~/components/ui/tabs";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime } from "~/lib/dashboard";
@@ -358,10 +360,12 @@ export default function DashboardSettingsRoute() {
   const [guideCopyState, setGuideCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [guidePreviewContent, setGuidePreviewContent] = useState(guideContent);
   const [guideExpanded, setGuideExpanded] = useState(false);
+  const [showWebhookSecret, setShowWebhookSecret] = useState(false);
 
   // Type assertion for settings - ProjectResponse schema doesn't include settings in types but API returns it
   const projectSettings = (fullProject as any)?.settings as components["schemas"]["ProjectSettings"] | undefined;
-  const [webhookUrl, setWebhookUrl] = useState(projectSettings?.notification_webhook ?? "");
+  const savedWebhookUrl = projectSettings?.notification_webhook ?? "";
+  const [webhookUrl, setWebhookUrl] = useState(savedWebhookUrl);
 
   const generatedKey = actionData?.generatedKey ?? null;
   const generatedWebhookSecret = actionData?.generatedWebhookSecret ?? null;
@@ -372,8 +376,13 @@ export default function DashboardSettingsRoute() {
   const isSavingWebhook =
     navigation.state !== "idle" && navigation.formData?.get("intent")?.toString() === "save_webhook_url";
   const hasProjects = projects.length > 0;
-
-  const hasWebhook = !!projectSettings?.notification_webhook;
+  const normalizedWebhookUrl = webhookUrl.trim();
+  const hasUnsavedWebhookUrlChanges = normalizedWebhookUrl !== savedWebhookUrl;
+  const hasWebhook = savedWebhookUrl.length > 0;
+  const persistedWebhookSecret = projectSettings?.notification_webhook_secret ?? null;
+  const currentWebhookSecret = generatedWebhookSecret?.notification_webhook_secret ?? persistedWebhookSecret;
+  const hasWebhookSecret = !!currentWebhookSecret;
+  const maskedWebhookSecret = hasWebhookSecret ? "*".repeat(Math.min(Math.max(currentWebhookSecret.length, 16), 40)) : "";
 
   useEffect(() => {
     setCopyState("idle");
@@ -381,11 +390,12 @@ export default function DashboardSettingsRoute() {
 
   useEffect(() => {
     setWebhookCopyState("idle");
-  }, [generatedWebhookSecret?.notification_webhook_secret]);
+    setShowWebhookSecret(false);
+  }, [currentWebhookSecret]);
 
   useEffect(() => {
-    setWebhookUrl(projectSettings?.notification_webhook ?? "");
-  }, [projectSettings?.notification_webhook]);
+    setWebhookUrl(savedWebhookUrl);
+  }, [savedWebhookUrl]);
 
   useEffect(() => {
     if (!onboardingTab) return;
@@ -407,9 +417,9 @@ export default function DashboardSettingsRoute() {
   };
 
   const handleCopyWebhookSecret = async () => {
-    if (!generatedWebhookSecret?.notification_webhook_secret) return;
+    if (!currentWebhookSecret) return;
     try {
-      await navigator.clipboard.writeText(generatedWebhookSecret.notification_webhook_secret);
+      await navigator.clipboard.writeText(currentWebhookSecret);
       setWebhookCopyState("copied");
     } catch {
       setWebhookCopyState("error");
@@ -776,7 +786,14 @@ export default function DashboardSettingsRoute() {
 
                     {/* Generate Webhook Secret */}
                     <div>
-                      <h3 className="mb-2 text-sm font-semibold text-slate-900">Step 1: Generate Webhook Secret</h3>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold text-slate-900">Step 1: Generate Webhook Secret</h3>
+                        {hasWebhookSecret && (
+                          <Badge variant="success" className="text-xs">
+                            ✓ Saved
+                          </Badge>
+                        )}
+                      </div>
                       <Form method="post" className="flex flex-wrap items-center gap-3">
                         <input type="hidden" name="intent" value="generate_webhook_secret" />
                         <input type="hidden" name="projectId" value={activeProject?.id ?? ""} />
@@ -795,26 +812,48 @@ export default function DashboardSettingsRoute() {
                         </Button>
                       </Form>
 
-                      {generatedWebhookSecret && (
+                      {hasWebhookSecret ? (
                         <div className="mt-3 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-                          <p className="text-sm font-semibold text-amber-950">Copy this secret now. It is only shown once.</p>
+                          <p className="text-sm font-semibold text-amber-950">
+                            {generatedWebhookSecret ? "Copy this secret now. It is only shown once." : "Webhook secret is saved for this project."}
+                          </p>
                           <p className="mt-1 text-xs text-amber-800">
                             Store this secret securely. You'll use it to verify webhook signatures.
                           </p>
 
                           <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5">
                             <p className="break-all font-mono text-xs text-slate-100">
-                              {generatedWebhookSecret.notification_webhook_secret}
+                              {showWebhookSecret ? currentWebhookSecret : maskedWebhookSecret}
                             </p>
                           </div>
 
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
-                            <span className="rounded-full border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-900">
-                              Updated: {formatDateTime(generatedWebhookSecret.updated_at)}
-                            </span>
-                          </div>
+                          {generatedWebhookSecret && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                              <span className="rounded-full border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-900">
+                                Updated: {formatDateTime(generatedWebhookSecret.updated_at)}
+                              </span>
+                            </div>
+                          )}
 
                           <div className="mt-3 flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowWebhookSecret((prev) => !prev)}
+                            >
+                              {showWebhookSecret ? (
+                                <>
+                                  <EyeOff className="mr-1.5 h-4 w-4" />
+                                  Hide
+                                </>
+                              ) : (
+                                <>
+                                  <Eye className="mr-1.5 h-4 w-4" />
+                                  Show
+                                </>
+                              )}
+                            </Button>
                             <Button type="button" variant="outline" size="sm" onClick={handleCopyWebhookSecret}>
                               {webhookCopyState === "copied" ? (
                                 <>
@@ -830,6 +869,8 @@ export default function DashboardSettingsRoute() {
                             )}
                           </div>
                         </div>
+                      ) : (
+                        <p className="mt-3 text-xs text-slate-500">No webhook secret generated yet.</p>
                       )}
                     </div>
 
@@ -857,9 +898,21 @@ export default function DashboardSettingsRoute() {
                             )}
                           />
                           <p className="mt-1.5 text-xs text-slate-500">Must be a valid HTTPS URL.</p>
+                          {hasWebhook && (
+                            <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                              <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Saved URL</p>
+                              <p className="mt-1 break-all font-mono text-xs text-slate-700">{savedWebhookUrl}</p>
+                            </div>
+                          )}
+                          {hasUnsavedWebhookUrlChanges && (
+                            <p className="mt-2 text-xs font-medium text-amber-700">Unsaved changes in webhook URL.</p>
+                          )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <Button type="submit" disabled={!activeProject || isSavingWebhook || !webhookUrl}>
+                          <Button
+                            type="submit"
+                            disabled={!activeProject || isSavingWebhook || !normalizedWebhookUrl || !hasUnsavedWebhookUrlChanges}
+                          >
                             {isSavingWebhook ? (
                               <>
                                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1053,5 +1106,20 @@ const isValid = hmac === signatureHeader;`}</code>
       </Tabs>
       </div>
     </div>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Settings unavailable"
+      description="Project settings could not be loaded right now."
+      safeHref="/project"
+      safeLabel="Back to dashboard"
+      retryLabel="Retry settings page"
+      showStatus
+    />
   );
 }

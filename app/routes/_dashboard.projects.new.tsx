@@ -7,6 +7,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
 import { Select } from "~/components/ui/select";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
@@ -2135,5 +2136,20 @@ export default function ProjectSetupRoute() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Project setup unavailable"
+      description="The new project onboarding flow failed to load."
+      safeHref="/project"
+      safeLabel="Back to dashboard"
+      retryLabel="Retry setup flow"
+      showStatus
+    />
   );
 }

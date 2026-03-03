@@ -7,6 +7,7 @@ import type { Route } from "./+types/_dashboard.billing";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime, formatStatusLabel } from "~/lib/dashboard";
@@ -689,5 +690,20 @@ export default function BillingRoute() {
       </div>
       </div>
     </div>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Billing unavailable"
+      description="Billing data could not be loaded right now."
+      safeHref="/project"
+      safeLabel="Back to dashboard"
+      retryLabel="Retry billing page"
+      showStatus
+    />
   );
 }

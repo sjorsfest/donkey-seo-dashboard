@@ -13,6 +13,7 @@ import type { Route } from "./+types/_dashboard.projects.$projectId.discovery.ke
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Drawer } from "~/components/ui/drawer";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { Select } from "~/components/ui/select";
 import { Skeleton } from "~/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "~/components/ui/table";
@@ -313,5 +314,23 @@ export default function DiscoveryKeywordsRoute() {
         )}
       </Drawer>
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}/discovery` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Keywords view unavailable"
+      description="The keyword explorer failed to load for this project."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to discovery overview" : "Back to dashboard"}
+      retryLabel="Retry keywords view"
+      showStatus
+    />
   );
 }

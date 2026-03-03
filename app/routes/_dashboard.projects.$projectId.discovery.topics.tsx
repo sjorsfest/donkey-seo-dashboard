@@ -3,6 +3,7 @@ import { Link, data, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/_dashboard.projects.$projectId.discovery.topics";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { ApiClient } from "~/lib/api.server";
 import { fetchJson } from "~/lib/pipeline-run.server";
 import type { components } from "~/types/api.generated";
@@ -174,5 +175,23 @@ export default function DiscoveryTopicsRoute() {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}/discovery` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Topics view unavailable"
+      description="The topic backlog failed to load for this project."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to discovery overview" : "Back to dashboard"}
+      retryLabel="Retry topics view"
+      showStatus
+    />
   );
 }

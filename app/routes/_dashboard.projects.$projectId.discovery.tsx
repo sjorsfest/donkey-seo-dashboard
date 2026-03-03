@@ -6,6 +6,7 @@ import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
 import { Progress } from "~/components/ui/progress";
 import { useOnboarding } from "~/components/onboarding/onboarding-context";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
@@ -667,5 +668,23 @@ export default function ProjectDiscoveryHubRoute() {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+export function ErrorBoundary({ error, params }: Route.ErrorBoundaryProps) {
+  const projectId = params.projectId;
+  const safeHref = projectId ? `/projects/${encodeURIComponent(projectId)}/discovery` : "/project";
+
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="panel"
+      title="Discovery overview unavailable"
+      description="The discovery overview failed to load for this project."
+      safeHref={safeHref}
+      safeLabel={projectId ? "Back to discovery" : "Back to dashboard"}
+      retryLabel="Retry discovery page"
+      showStatus
+    />
   );
 }

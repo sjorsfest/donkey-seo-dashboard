@@ -35,6 +35,7 @@ import { OnboardingOverlay } from "~/components/onboarding/onboarding-overlay";
 import { DonkeyBubble } from "~/components/onboarding/donkey-bubble";
 import { NavExplainerOverlay } from "~/components/onboarding/nav-explainer-overlay";
 import { SupportWidget } from "~/components/SupportWidget";
+import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { signWidgetMetadataToken } from "~/lib/widget-metadata-signing.server";
 
 type UserResponse = components["schemas"]["UserResponse"];
@@ -313,6 +314,21 @@ export default function DashboardLayout() {
         supportWidgetMetadataToken={supportWidgetMetadataToken}
       />
     </OnboardingProvider>
+  );
+}
+
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  return (
+    <RouteErrorBoundaryCard
+      error={error}
+      variant="dashboard"
+      title="Dashboard unavailable"
+      description="The dashboard shell failed to load."
+      safeHref="/project"
+      safeLabel="Back to dashboard home"
+      retryLabel="Retry dashboard"
+      showStatus
+    />
   );
 }
 
