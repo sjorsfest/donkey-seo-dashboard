@@ -75,6 +75,11 @@ export function StepFourIntegrationsStep({
     }
   };
 
+  const apiKeyEnvValue = latestGeneratedKey ? `DONKEYSEO_API_KEY=${latestGeneratedKey.api_key}` : null;
+  const webhookSecretEnvValue = latestGeneratedWebhookSecret
+    ? `DONKEYSEO_WEBHOOK_SECRET=${latestGeneratedWebhookSecret.notification_webhook_secret}`
+    : null;
+
   return (
     <motion.div key="step4-integrations" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
       <Card>
@@ -116,14 +121,14 @@ export function StepFourIntegrationsStep({
                 <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
                   <p className="text-xs font-semibold text-amber-900">Shown once. Copy and store securely.</p>
                   <p className="mt-2 break-all rounded border border-slate-800 bg-slate-950 px-2 py-2 font-mono text-xs text-slate-100">
-                    {latestGeneratedKey.api_key}
+                    {apiKeyEnvValue}
                   </p>
                   <div className="mt-2 flex items-center gap-2">
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() => void handleCopy(latestGeneratedKey.api_key, setApiKeyCopyState)}
+                      onClick={() => void handleCopy(apiKeyEnvValue, setApiKeyCopyState)}
                     >
                       {apiKeyCopyState === "copied" ? (
                         <>
@@ -133,7 +138,7 @@ export function StepFourIntegrationsStep({
                       ) : (
                         <>
                           <Copy className="mr-1.5 h-4 w-4" />
-                          Copy key
+                          Copy env var
                         </>
                       )}
                     </Button>
@@ -173,16 +178,14 @@ export function StepFourIntegrationsStep({
                 <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
                   <p className="text-xs font-semibold text-amber-900">Shown once. Copy and store securely.</p>
                   <p className="mt-2 break-all rounded border border-slate-800 bg-slate-950 px-2 py-2 font-mono text-xs text-slate-100">
-                    {latestGeneratedWebhookSecret.notification_webhook_secret}
+                    {webhookSecretEnvValue}
                   </p>
                   <div className="mt-2 flex items-center gap-2">
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
-                      onClick={() =>
-                        void handleCopy(latestGeneratedWebhookSecret.notification_webhook_secret, setWebhookCopyState)
-                      }
+                      onClick={() => void handleCopy(webhookSecretEnvValue, setWebhookCopyState)}
                     >
                       {webhookCopyState === "copied" ? (
                         <>
@@ -192,7 +195,7 @@ export function StepFourIntegrationsStep({
                       ) : (
                         <>
                           <Copy className="mr-1.5 h-4 w-4" />
-                          Copy secret
+                          Copy env var
                         </>
                       )}
                     </Button>

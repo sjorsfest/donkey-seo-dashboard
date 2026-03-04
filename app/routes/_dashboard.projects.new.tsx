@@ -201,22 +201,19 @@ export async function action({ request }: Route.ActionArgs) {
     const domain = sanitizeDomainInput(rawDomain);
     const name = String(formData.get("name") ?? "").trim();
     const description = String(formData.get("description") ?? "").trim();
-    const postsPerWeek = parsePostsPerWeek(formData.get("posts_per_week"));
+    const postsPerWeek = parsePostsPerWeek(formData.get("posts_per_week")) ?? DEFAULT_POSTS_PER_WEEK;
 
     const domainMissing = !domain;
     const domainInvalid = !domainMissing && !isValidDomain(domain);
-    if (domainMissing || domainInvalid || !name || postsPerWeek === null) {
+    if (domainMissing || domainInvalid || !name) {
       return data(
         {
           error: domainInvalid
             ? "Please enter a valid domain."
-            : postsPerWeek === null
-              ? "Choose how many posts to publish per week."
-              : "Project name and domain are required.",
+            : "Project name and domain are required.",
           fieldErrors: {
             domain: domainMissing ? "Domain is required." : domainInvalid ? "Enter a valid domain (e.g. example.com)." : undefined,
             name: !name ? "Project name is required." : undefined,
-            posts_per_week: postsPerWeek === null ? `Choose a value between ${MIN_POSTS_PER_WEEK} and ${MAX_POSTS_PER_WEEK}.` : undefined,
           },
         } satisfies ActionData,
         { status: 400, headers: await api.commit() }
@@ -1250,7 +1247,6 @@ export default function ProjectSetupRoute() {
           postsPerWeek={postsPerWeek}
           domainError={domainError}
           nameError={actionData?.fieldErrors?.name}
-          postsPerWeekError={postsPerWeekError}
           isSubmitting={isSubmitting}
           domainIsValid={domainIsValid}
           onDomainChange={handleDomainChange}
@@ -1259,7 +1255,6 @@ export default function ProjectSetupRoute() {
             setName(value);
           }}
           onDescriptionChange={setDescription}
-          onPostsPerWeekChange={setPostsPerWeek}
           showWelcomeIntro={onboarding.isPhase("welcome") && welcomeStep === "intro"}
           showWelcomeFocus={onboarding.isPhase("welcome") && welcomeStep === "focus"}
           onWelcomeIntroNext={() => setWelcomeStep("focus")}

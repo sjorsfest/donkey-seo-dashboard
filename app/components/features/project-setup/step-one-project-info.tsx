@@ -4,8 +4,6 @@ import { DonkeyBubble } from "~/components/onboarding/donkey-bubble";
 import { OnboardingOverlay } from "~/components/onboarding/onboarding-overlay";
 import { Button } from "~/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Select } from "~/components/ui/select";
-import { parsePostsPerWeek, POSTS_PER_WEEK_OPTIONS } from "./utils";
 
 type StepOneProjectInfoProps = {
   domain: string;
@@ -14,13 +12,11 @@ type StepOneProjectInfoProps = {
   postsPerWeek: number;
   domainError: string | null;
   nameError: string | undefined;
-  postsPerWeekError: string | null;
   isSubmitting: boolean;
   domainIsValid: boolean;
   onDomainChange: (value: string) => void;
   onNameChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
-  onPostsPerWeekChange: (value: number) => void;
   showWelcomeIntro: boolean;
   showWelcomeFocus: boolean;
   onWelcomeIntroNext: () => void;
@@ -34,13 +30,11 @@ export function StepOneProjectInfoStep({
   postsPerWeek,
   domainError,
   nameError,
-  postsPerWeekError,
   isSubmitting,
   domainIsValid,
   onDomainChange,
   onNameChange,
   onDescriptionChange,
-  onPostsPerWeekChange,
   showWelcomeIntro,
   showWelcomeFocus,
   onWelcomeIntroNext,
@@ -106,24 +100,6 @@ export function StepOneProjectInfoStep({
                 className="h-11 rounded-xl border border-slate-300 px-3 text-sm"
               />
             </label>
-
-            <label className="grid gap-1.5 text-sm">
-              <span className="font-semibold text-slate-700">Posts per week</span>
-              <Select
-                value={String(postsPerWeek)}
-                onChange={(event) => {
-                  const parsed = parsePostsPerWeek(event.target.value);
-                  if (parsed !== null) onPostsPerWeekChange(parsed);
-                }}
-              >
-                {POSTS_PER_WEEK_OPTIONS.map((value) => (
-                  <option key={value} value={String(value)}>
-                    {value} {value === 1 ? "post" : "posts"} per week
-                  </option>
-                ))}
-              </Select>
-              {postsPerWeekError ? <span className="text-xs font-semibold text-rose-600">{postsPerWeekError}</span> : null}
-            </label>
           </CardContent>
         </Card>
 
@@ -181,4 +157,3 @@ export function StepOneProjectInfoStep({
     </motion.div>
   );
 }
-
