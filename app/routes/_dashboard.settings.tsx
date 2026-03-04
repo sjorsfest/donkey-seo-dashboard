@@ -20,7 +20,7 @@ type ProjectApiKeyResponse = components["schemas"]["ProjectApiKeyResponse"];
 type ProjectWebhookSecretResponse = components["schemas"]["ProjectWebhookSecretResponse"];
 type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 
-type ProjectSummary = Pick<ProjectResponse, "id" | "name" | "domain" | "status">;
+type ProjectSummary = Pick<ProjectResponse, "id" | "name" | "domain" | "status" | "posts_per_week">;
 
 type LoaderData = {
   projects: ProjectSummary[];
@@ -91,6 +91,7 @@ export async function loader({ request }: { request: Request }) {
     name: project.name,
     domain: project.domain,
     status: project.status,
+    posts_per_week: typeof project.posts_per_week === "number" ? project.posts_per_week : 1,
   }));
 
   const sessionProjectId = normalizeSessionProjectId(await api.getSessionValue(ACTIVE_PROJECT_SESSION_KEY));
@@ -364,6 +365,7 @@ export default function DashboardSettingsRoute() {
 
   // Type assertion for settings - ProjectResponse schema doesn't include settings in types but API returns it
   const projectSettings = (fullProject as any)?.settings as components["schemas"]["ProjectSettings"] | undefined;
+  const projectPostsPerWeek = fullProject?.posts_per_week ?? activeProject?.posts_per_week ?? null;
   const savedWebhookUrl = projectSettings?.notification_webhook ?? "";
   const [webhookUrl, setWebhookUrl] = useState(savedWebhookUrl);
 
@@ -509,6 +511,11 @@ export default function DashboardSettingsRoute() {
                         <p>
                           <span className="font-semibold text-slate-900">Domain:</span> {activeProject.domain}
                         </p>
+                        {projectPostsPerWeek ? (
+                          <p>
+                            <span className="font-semibold text-slate-900">Posts per week:</span> {projectPostsPerWeek}
+                          </p>
+                        ) : null}
                         <p>
                           <span className="font-semibold text-slate-900">Project ID:</span>{" "}
                           <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs text-slate-800">
@@ -601,7 +608,9 @@ export default function DashboardSettingsRoute() {
                         <>
                           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Active project</p>
                           <p className="mt-1 text-sm font-semibold text-slate-900">{activeProject.name}</p>
-                          <p className="text-xs text-slate-500">{activeProject.domain}</p>
+                          <p className="text-xs text-slate-500">
+                            {activeProject.domain} · {activeProject.posts_per_week} posts/week
+                          </p>
                         </>
                       ) : (
                         <>
@@ -774,7 +783,9 @@ export default function DashboardSettingsRoute() {
                         <>
                           <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Active project</p>
                           <p className="mt-1 text-sm font-semibold text-slate-900">{activeProject.name}</p>
-                          <p className="text-xs text-slate-500">{activeProject.domain}</p>
+                          <p className="text-xs text-slate-500">
+                            {activeProject.domain} · {activeProject.posts_per_week} posts/week
+                          </p>
                         </>
                       ) : (
                         <>

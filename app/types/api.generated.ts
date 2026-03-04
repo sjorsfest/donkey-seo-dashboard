@@ -2215,10 +2215,76 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * FunnelMixConfig
+         * @description Soft targeting mix for funnel-stage balancing.
+         */
+        FunnelMixConfig: {
+            /**
+             * Mode
+             * @default derived_soft_adjust
+             * @constant
+             */
+            mode: "derived_soft_adjust";
+            /**
+             * Tofu
+             * @default 0.4
+             */
+            tofu: number;
+            /**
+             * Mofu
+             * @default 0.35
+             */
+            mofu: number;
+            /**
+             * Bofu
+             * @default 0.25
+             */
+            bofu: number;
+            /**
+             * Influence
+             * @description How strongly funnel mix should influence ranking/selection.
+             * @default 0.3
+             */
+            influence: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * IntentMixConfig
+         * @description Soft targeting mix for intent balancing.
+         */
+        IntentMixConfig: {
+            /**
+             * Mode
+             * @default adaptive_auto
+             * @constant
+             */
+            mode: "adaptive_auto";
+            /**
+             * Informational
+             * @default 0.4
+             */
+            informational: number;
+            /**
+             * Commercial
+             * @default 0.35
+             */
+            commercial: number;
+            /**
+             * Transactional
+             * @default 0.25
+             */
+            transactional: number;
+            /**
+             * Influence
+             * @description How strongly intent mix should influence ranking/selection.
+             * @default 0.35
+             */
+            influence: number;
         };
         /**
          * KeywordBulkUpdateRequest
@@ -2507,6 +2573,8 @@ export interface components {
         PipelineRunStrategy: {
             /** Conversion Intents */
             conversion_intents?: string[];
+            intent_mix?: components["schemas"]["IntentMixConfig"];
+            funnel_mix?: components["schemas"]["FunnelMixConfig"];
             /**
              * Scope Mode
              * @default balanced_adjacent
@@ -2731,6 +2799,11 @@ export interface components {
             primary_locale: string;
             /** Secondary Locales */
             secondary_locales?: string[] | null;
+            /**
+             * Posts Per Week
+             * @default 1
+             */
+            posts_per_week: number;
             goals?: components["schemas"]["ProjectGoals"] | null;
             constraints?: components["schemas"]["ProjectConstraints"] | null;
             settings?: components["schemas"]["ProjectSettings"] | null;
@@ -2742,11 +2815,6 @@ export interface components {
          * @description Business goals for the keyword research project.
          */
         ProjectGoals: {
-            /**
-             * Primary Objective
-             * @default traffic
-             */
-            primary_objective: string;
             /** Secondary Goals */
             secondary_goals?: string[] | null;
             /** Target Monthly Traffic */
@@ -2795,6 +2863,11 @@ export interface components {
             primary_locale: string;
             /** Secondary Locales */
             secondary_locales?: string[] | null;
+            /**
+             * Posts Per Week
+             * @default 1
+             */
+            posts_per_week: number;
             goals?: components["schemas"]["ProjectGoals"] | null;
             constraints?: components["schemas"]["ProjectConstraints"] | null;
             settings?: components["schemas"]["ProjectSettings"] | null;
@@ -2834,10 +2907,10 @@ export interface components {
             primary_locale: string;
             /** Secondary Locales */
             secondary_locales: string[] | null;
+            /** Posts Per Week */
+            posts_per_week: number;
             /** Site Maturity */
             site_maturity: string | null;
-            /** Primary Goal */
-            primary_goal: string | null;
             /** Current Step */
             current_step: number;
             /** Status */
@@ -2891,6 +2964,8 @@ export interface components {
             primary_locale?: string | null;
             /** Secondary Locales */
             secondary_locales?: string[] | null;
+            /** Posts Per Week */
+            posts_per_week?: number | null;
             goals?: components["schemas"]["ProjectGoals"] | null;
             constraints?: components["schemas"]["ProjectConstraints"] | null;
             settings?: components["schemas"]["ProjectSettings"] | null;

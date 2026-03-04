@@ -69,6 +69,8 @@ type TopicGroup = {
   }>;
 };
 
+const STEP_SUCCESS_STATUSES = new Set(["completed", "success", "succeeded", "done"]);
+
 async function handleUnauthorized(api: ApiClient) {
   return redirect("/login", {
     headers: {
@@ -89,6 +91,23 @@ function isWithinRunWindow(timestamp: string, windowStartMs: number | null, wind
   if (windowStartMs !== null && parsedTimestamp < windowStartMs) return false;
   if (windowEndMs !== null && parsedTimestamp >= windowEndMs) return false;
   return true;
+}
+
+function isSuccessfulStepStatus(status: string | null | undefined) {
+  return STEP_SUCCESS_STATUSES.has(String(status ?? "").toLowerCase());
+}
+
+function isArticleGenerationStep(stepName: string | null | undefined) {
+  const normalized = String(stepName ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return normalized.includes("articlegeneration");
+}
+
+function hasCompletedArticleGenerationStep(steps: StepExecutionResponse[] | null | undefined) {
+  if (!steps || steps.length === 0) return false;
+  return steps.some((step) => isArticleGenerationStep(step.step_name) && isSuccessfulStepStatus(step.status));
 }
 
 function formatConfidencePercent(value: number | null | undefined): string | null {
@@ -511,6 +530,7 @@ export default function ProjectCreationRunRoute() {
   const liveProgress = progressFetcher.data ?? progress;
   const effectiveStatus = liveProgress?.status ?? selectedRun.status;
   const stepExecutions = (liveProgress?.steps ?? selectedRun.step_executions ?? []) as StepExecutionResponse[];
+  const articleGenerationCompleted = hasCompletedArticleGenerationStep(stepExecutions);
 
   useEffect(() => {
     isProgressRequestInFlightRef.current = progressFetcher.state !== "idle";
@@ -535,7 +555,9 @@ export default function ProjectCreationRunRoute() {
     };
   }, [project.id, selectedRun.id, effectiveStatus]);
 
-  const overallProgress = Math.round(liveProgress?.overall_progress ?? calculateOverallProgress(stepExecutions));
+  const overallProgress = articleGenerationCompleted
+    ? 100
+    : Math.round(liveProgress?.overall_progress ?? calculateOverallProgress(stepExecutions));
 
   const sortedStepExecutions = useMemo(
     () => stepExecutions.slice().sort((a, b) => a.step_number - b.step_number),

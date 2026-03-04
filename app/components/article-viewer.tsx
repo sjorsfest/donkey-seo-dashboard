@@ -376,6 +376,10 @@ function SectionBlockView({ block }: { block: DocumentBlock }) {
   const heading = safeString(block.heading);
   const body = safeString(block.body);
   const Tag = headingTag(block.level);
+  const items = safeArray<string>(block.items);
+  const isOrdered = block.ordered === true;
+  const columns = safeArray<string>(block.table_columns);
+  const rows = safeArray<string[]>(block.table_rows);
 
   return (
     <section>
@@ -387,6 +391,73 @@ function SectionBlockView({ block }: { block: DocumentBlock }) {
           paragraphClassName="max-w-prose text-[15px] leading-[1.8] text-slate-600"
         />
       ) : null}
+
+      {/* Render list if items exist */}
+      {items.length > 0 ? (
+        isOrdered ? (
+          <ol className={cn("space-y-2 pl-5", (heading || body) && "mt-4")}>
+            {items.map((item, i) => (
+              <li
+                key={i}
+                className="pl-1.5 text-[15px] leading-[1.7] text-slate-700 marker:font-semibold marker:text-blue-600"
+              >
+                <MarkdownInline content={safeString(item)} />
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <ul className={cn("space-y-2", (heading || body) && "mt-4")}>
+            {items.map((item, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <svg className="mt-[6px] h-[18px] w-[18px] flex-shrink-0 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                </svg>
+                <span className="flex-1 text-[15px] leading-[1.7] text-slate-700">
+                  <MarkdownInline content={safeString(item)} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        )
+      ) : null}
+
+      {/* Render table if columns and rows exist */}
+      {columns.length > 0 && rows.length > 0 ? (
+        <div className={cn("overflow-x-auto rounded-xl border border-slate-200/80", (heading || body || items.length > 0) && "mt-4")}>
+          <table className="w-full text-[14px]">
+            <thead>
+              <tr className="border-b border-slate-200/80 bg-slate-50/80">
+                {columns.map((col, i) => (
+                  <th
+                    key={i}
+                    className="px-5 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {safeString(col)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => {
+                const cells = Array.isArray(row) ? row : [];
+                return (
+                  <tr
+                    key={ri}
+                    className="border-b border-slate-100 last:border-b-0 even:bg-slate-50/40"
+                  >
+                    {cells.map((cell, ci) => (
+                      <td key={ci} className="px-5 py-3.5 text-slate-600">
+                        <MarkdownInline content={safeString(cell)} />
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
       <BlockLinks links={block.links} />
     </section>
   );
@@ -401,22 +472,24 @@ function ListBlockView({ block }: { block: DocumentBlock }) {
     <section>
       {heading ? <h2 className={headingStyles.h2}>{heading}</h2> : null}
       {isOrdered ? (
-        <ol className={cn("space-y-2.5 pl-5", heading ? "mt-4" : "mt-1")}>
+        <ol className={cn("space-y-2 pl-5", heading ? "mt-4" : "mt-2")}>
           {items.map((item, i) => (
             <li
               key={i}
-              className="list-decimal pl-1 text-[15px] leading-[1.7] text-slate-600 marker:font-semibold marker:text-slate-400"
+              className="pl-1.5 text-[15px] leading-[1.7] text-slate-700 marker:font-semibold marker:text-blue-600"
             >
               <MarkdownInline content={safeString(item)} />
             </li>
           ))}
         </ol>
       ) : (
-        <ul className={cn("space-y-2.5", heading ? "mt-4" : "mt-1")}>
+        <ul className={cn("space-y-2", heading ? "mt-4" : "mt-2")}>
           {items.map((item, i) => (
-            <li key={i} className="flex items-start gap-3 text-[15px] leading-[1.7] text-slate-600">
-              <span className="mt-[9px] h-[5px] w-[5px] flex-shrink-0 rounded-full bg-slate-300" />
-              <span>
+            <li key={i} className="flex items-start gap-2.5">
+              <svg className="mt-[6px] h-[18px] w-[18px] flex-shrink-0 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+              </svg>
+              <span className="flex-1 text-[15px] leading-[1.7] text-slate-700">
                 <MarkdownInline content={safeString(item)} />
               </span>
             </li>
@@ -435,13 +508,13 @@ function StepsBlockView({ block }: { block: DocumentBlock }) {
   return (
     <section>
       {heading ? <h2 className={headingStyles.h2}>{heading}</h2> : null}
-      <ol className={cn("space-y-4", heading ? "mt-4" : "mt-1")}>
+      <ol className={cn("space-y-3", heading ? "mt-4" : "mt-2")}>
         {items.map((item, i) => (
-          <li key={i} className="flex items-start gap-4">
-            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500">
+          <li key={i} className="flex items-start gap-3">
+            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">
               {i + 1}
             </span>
-            <span className="pt-0.5 text-[15px] leading-[1.7] text-slate-600">
+            <span className="flex-1 pt-0.5 text-[15px] leading-[1.7] text-slate-700">
               <MarkdownInline content={safeString(item)} />
             </span>
           </li>

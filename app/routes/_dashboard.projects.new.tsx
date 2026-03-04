@@ -1,88 +1,92 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion } from "framer-motion";
-import { Globe, Linkedin, Twitter, Upload } from "lucide-react";
-import { Form, Link, data, redirect, useActionData, useFetcher, useLoaderData, useNavigation } from "react-router";
+import { data, redirect, useActionData, useFetcher, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/_dashboard.projects.new";
-import { Button } from "~/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/components/ui/card";
-import { Progress } from "~/components/ui/progress";
-import { Select } from "~/components/ui/select";
 import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
 import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import {
   buildPresetConstraints,
-  buildPresetGoals,
-  formatStatusLabel,
-  getStatusBadgeClass,
   isValidDomain,
   sanitizeDomainInput,
   suggestProjectNameFromDomain,
 } from "~/lib/dashboard";
-import { COUNTRY_OPTIONS, countryToLocale } from "~/lib/onboarding";
+import { countryToLocale } from "~/lib/onboarding";
 import { useOnboarding } from "~/components/onboarding/onboarding-context";
-import { OnboardingOverlay } from "~/components/onboarding/onboarding-overlay";
-import { DonkeyBubble } from "~/components/onboarding/donkey-bubble";
+import {
+  ExpandedAssetPreviewModal,
+  SetupActionErrorCard,
+  SetupPageHeader,
+  SetupStepTracker,
+  StepFourIntegrationsStep,
+  StepFiveSetupProgressStep,
+  StepOneProjectInfoStep,
+  StepThreeAuthorsStep,
+  StepTwoSeoInputsStep,
+  type AuthorDraft,
+  type AuthorImageUploadStatus,
+  type BrandVisualContextResponse,
+  type ExpandedAsset,
+  type LocaleSelection,
+  type ProjectApiKeyResponse,
+  type ProjectWebhookSecretResponse,
+  type SetupStep,
+  type TaskStatusResponse,
+} from "~/components/features/project-setup";
+import {
+  DEFAULT_POSTS_PER_WEEK,
+  FAILURE_LIKE_TASK_STATUSES,
+  MAX_POSTS_PER_WEEK,
+  MIN_POSTS_PER_WEEK,
+  TERMINAL_TASK_STATUSES,
+  buildAuthorMutationPayload,
+  buildOnboardingUrl,
+  clampPostsPerWeek,
+  createEmptyAuthorDraft,
+  extractDifferentiators,
+  extractIcpNicheNames,
+  getBrandContextValue,
+  hasAuthorDraftContent,
+  normalizeOptionalString,
+  parseOnboardingAuthorRecord,
+  parseOnboardingAuthors,
+  parsePostsPerWeek,
+  parseStep,
+} from "~/components/features/project-setup/utils";
 import type { components } from "~/types/api.generated";
-import type { SetupPreset } from "~/types/dashboard";
 
 type ProjectResponse = components["schemas"]["ProjectResponse"];
 type ProjectUpdate = components["schemas"]["ProjectUpdate"];
-type PipelineRunResponse = components["schemas"]["PipelineRunResponse"];
 type ProjectOnboardingBootstrapRequest = components["schemas"]["ProjectOnboardingBootstrapRequest"];
 type ProjectOnboardingBootstrapResponse = components["schemas"]["ProjectOnboardingBootstrapResponse"];
-type TaskStatusResponse = components["schemas"]["TaskStatusResponse"];
-type BrandVisualContextResponse = components["schemas"]["BrandVisualContextResponse"];
-type AuthorCreate = components["schemas"]["AuthorCreate"];
 type AuthorResponse = components["schemas"]["AuthorResponse"];
 type AuthorProfileImageSignedUploadRequest = components["schemas"]["AuthorProfileImageSignedUploadRequest"];
 type AuthorProfileImageSignedUploadResponse = components["schemas"]["AuthorProfileImageSignedUploadResponse"];
 
 type LoaderData = {
-  step: 1 | 2 | 3 | 4;
+  step: SetupStep;
   projectId: string | null;
   setupRunId: string | null;
   setupTaskId: string | null;
   project: ProjectResponse | null;
+  integrationGuide: string | null;
   prefill: {
     domain: string;
     name: string;
     description: string;
+    posts_per_week: number;
   };
 };
 
 type ActionData = {
   error?: string;
+  generatedKey?: ProjectApiKeyResponse;
+  generatedWebhookSecret?: ProjectWebhookSecretResponse;
   fieldErrors?: {
     domain?: string;
     name?: string;
+    posts_per_week?: string;
     authors?: string;
   };
-};
-
-type AuthorDraft = {
-  id: string;
-  persisted_author_id: string;
-  name: string;
-  bio: string;
-  website_url: string;
-  linkedin_url: string;
-  twitter_url: string;
-  profile_image_source_url: string;
-  profile_image_object_key: string;
-  profile_image_mime_type: string;
-};
-
-type SubmittedOnboardingAuthor = {
-  persisted_author_id: string | null;
-  name: string;
-  bio: string | null;
-  website_url: string | null;
-  linkedin_url: string | null;
-  twitter_url: string | null;
-  profile_image_source_url: string | null;
-  profile_image_object_key: string | null;
-  profile_image_mime_type: string | null;
 };
 
 type AuthorImageUploadActionResponse = {
@@ -90,16 +94,14 @@ type AuthorImageUploadActionResponse = {
   author_client_id?: string;
   author_id?: string;
   upload?: AuthorProfileImageSignedUploadResponse;
+  uploaded?: boolean;
+  profile_image_object_key?: string;
+  profile_image_mime_type?: string;
 };
 
 type PreparedAuthorImageUpload = AuthorImageUploadActionResponse & {
   author_id: string;
   upload: AuthorProfileImageSignedUploadResponse;
-};
-
-type AuthorImageUploadStatus = {
-  state: "idle" | "preparing" | "uploading" | "uploaded" | "error";
-  message?: string;
 };
 
 type TaskStatusLoaderData = {
@@ -112,474 +114,7 @@ type BrandVisualContextLoaderData = {
   error?: string;
 };
 
-const PRESET_OPTIONS: Array<{ value: SetupPreset; title: string; description: string }> = [
-  {
-    value: "traffic_growth",
-    title: "Traffic Growth",
-    description:
-      "Maximize organic visibility with high-volume keywords. Build topical authority and become the go-to resource in your niche.",
-  },
-  {
-    value: "lead_generation",
-    title: "Lead Generation",
-    description:
-      "Target comparison and buyer-intent queries that drive demo requests and sign-ups. Convert searchers into qualified leads.",
-  },
-  {
-    value: "revenue_content",
-    title: "Revenue Content",
-    description:
-      "Focus on money-page keywords: alternatives, pricing, use cases. Drive revenue through high-intent commercial content.",
-  },
-];
-
-const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "error", "paused", "cancelled"]);
-const FAILURE_LIKE_TASK_STATUSES = new Set(["failed", "error", "paused", "cancelled"]);
-
-function parseStep(value: string | null): 1 | 2 | 3 | 4 {
-  if (value === "2") return 2;
-  if (value === "3") return 3;
-  if (value === "4") return 4;
-  return 1;
-}
-
-function parseSetupPreset(value: string): SetupPreset {
-  if (value === "lead_generation" || value === "lead_gen") return "lead_generation";
-  if (value === "revenue_content") return value;
-  return "traffic_growth";
-}
-
-function createEmptyAuthorDraft(id: string): AuthorDraft {
-  return {
-    id,
-    persisted_author_id: "",
-    name: "",
-    bio: "",
-    website_url: "",
-    linkedin_url: "",
-    twitter_url: "",
-    profile_image_source_url: "",
-    profile_image_object_key: "",
-    profile_image_mime_type: "",
-  };
-}
-
-function hasAuthorDraftContent(author: AuthorDraft): boolean {
-  return [
-    author.persisted_author_id,
-    author.name,
-    author.bio,
-    author.website_url,
-    author.linkedin_url,
-    author.twitter_url,
-    author.profile_image_source_url,
-    author.profile_image_object_key,
-    author.profile_image_mime_type,
-  ].some((value) => value.trim().length > 0);
-}
-
-function normalizeOptionalString(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
-function normalizeOptionalUrl(value: unknown): string | null {
-  const raw = normalizeOptionalString(value);
-  if (!raw) return null;
-
-  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  try {
-    const parsed = new URL(withProtocol);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
-
-function normalizeTwitterProfileUrl(value: unknown): string | null {
-  const raw = normalizeOptionalString(value);
-  if (!raw) return null;
-
-  const stripped = raw.replace(/^@+/, "");
-  const withProtocol = /^https?:\/\//i.test(stripped)
-    ? stripped
-    : /^(?:www\.|mobile\.)?(?:x|twitter)\.com\//i.test(stripped)
-      ? `https://${stripped}`
-      : null;
-
-  if (!withProtocol) {
-    return /^[A-Za-z0-9_]{1,15}$/.test(stripped) ? `https://x.com/${stripped}` : null;
-  }
-
-  try {
-    const parsed = new URL(withProtocol);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-
-    const hostname = parsed.hostname.toLowerCase();
-    const isKnownXHost =
-      hostname === "x.com" ||
-      hostname === "www.x.com" ||
-      hostname === "twitter.com" ||
-      hostname === "www.twitter.com" ||
-      hostname === "mobile.twitter.com";
-
-    if (isKnownXHost) {
-      const firstPathSegment = parsed.pathname
-        .split("/")
-        .filter(Boolean)
-        .map((segment) => segment.replace(/^@+/, ""))[0];
-
-      if (!firstPathSegment || !/^[A-Za-z0-9_]{1,15}$/.test(firstPathSegment)) return null;
-      return `https://x.com/${firstPathSegment}`;
-    }
-
-    // Backward compatibility: old bug stored bare handles as hosts (e.g. https://jack).
-    const hostAsHandle = parsed.hostname.replace(/^@+/, "");
-    const pathSegments = parsed.pathname.split("/").filter(Boolean);
-    if (pathSegments.length === 0 && /^[A-Za-z0-9_]{1,15}$/.test(hostAsHandle)) {
-      return `https://x.com/${hostAsHandle}`;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function parseOnboardingAuthorRecord(value: unknown, index: number): { author: SubmittedOnboardingAuthor | null; error: string | null } {
-  if (!value || typeof value !== "object") return { author: null, error: null };
-
-  const record = value as Record<string, unknown>;
-  const persistedAuthorId = normalizeOptionalString(record.persisted_author_id);
-  const bio = normalizeOptionalString(record.bio);
-  const rawWebsiteUrl = normalizeOptionalString(record.website_url) ?? normalizeOptionalString(record.blog_url);
-  const rawLinkedinUrl = normalizeOptionalString(record.linkedin_url);
-  const rawTwitterUrl = normalizeOptionalString(record.twitter_url) ?? normalizeOptionalString(record.x_url);
-  const rawProfileImageSourceUrl = normalizeOptionalString(record.profile_image_source_url);
-  const profileImageObjectKey = normalizeOptionalString(record.profile_image_object_key);
-  const profileImageMimeType = normalizeOptionalString(record.profile_image_mime_type);
-  const name = normalizeOptionalString(record.name);
-
-  if (!name) {
-    if (
-      persistedAuthorId ||
-      bio ||
-      rawWebsiteUrl ||
-      rawLinkedinUrl ||
-      rawTwitterUrl ||
-      rawProfileImageSourceUrl ||
-      profileImageObjectKey ||
-      profileImageMimeType
-    ) {
-      return { author: null, error: `Author ${index + 1}: name is required when other details are provided.` };
-    }
-    return { author: null, error: null };
-  }
-
-  const websiteUrl = rawWebsiteUrl ? normalizeOptionalUrl(rawWebsiteUrl) : null;
-  const linkedinUrl = rawLinkedinUrl ? normalizeOptionalUrl(rawLinkedinUrl) : null;
-  const twitterUrl = rawTwitterUrl ? normalizeTwitterProfileUrl(rawTwitterUrl) : null;
-  const profileImageSourceUrl = rawProfileImageSourceUrl ? normalizeOptionalUrl(rawProfileImageSourceUrl) : null;
-
-  if (rawWebsiteUrl && !websiteUrl) {
-    return { author: null, error: `Author ${index + 1}: blog URL must be a valid URL.` };
-  }
-  if (rawLinkedinUrl && !linkedinUrl) {
-    return { author: null, error: `Author ${index + 1}: LinkedIn URL must be a valid URL.` };
-  }
-  if (rawTwitterUrl && !twitterUrl) {
-    return { author: null, error: `Author ${index + 1}: X/Twitter URL must be a valid URL.` };
-  }
-  if (rawProfileImageSourceUrl && !profileImageSourceUrl) {
-    return { author: null, error: `Author ${index + 1}: profile image URL must be a valid URL.` };
-  }
-
-  return {
-    author: {
-      persisted_author_id: persistedAuthorId,
-      name,
-      bio,
-      website_url: websiteUrl,
-      linkedin_url: linkedinUrl,
-      twitter_url: twitterUrl,
-      profile_image_source_url: profileImageSourceUrl,
-      profile_image_object_key: profileImageObjectKey,
-      profile_image_mime_type: profileImageMimeType,
-    },
-    error: null,
-  };
-}
-
-function parseOnboardingAuthors(rawAuthors: string): { authors: SubmittedOnboardingAuthor[]; error: string | null } {
-  let parsed: unknown = [];
-
-  try {
-    parsed = JSON.parse(rawAuthors);
-  } catch {
-    return { authors: [], error: "Invalid authors payload." };
-  }
-
-  if (!Array.isArray(parsed)) {
-    return { authors: [], error: "Invalid authors payload." };
-  }
-
-  const authors: SubmittedOnboardingAuthor[] = [];
-  const seenNames = new Set<string>();
-
-  for (const [index, value] of parsed.entries()) {
-    const { author, error } = parseOnboardingAuthorRecord(value, index);
-    if (error) return { authors: [], error };
-    if (!author) continue;
-
-    const dedupeKey = author.name.toLowerCase();
-    if (seenNames.has(dedupeKey)) continue;
-    seenNames.add(dedupeKey);
-
-    authors.push(author);
-  }
-
-  return { authors: authors.slice(0, 8), error: null };
-}
-
-function buildAuthorMutationPayload(author: SubmittedOnboardingAuthor): AuthorCreate {
-  const payload: AuthorCreate = {
-    name: author.name,
-  };
-
-  if (author.bio) payload.bio = author.bio;
-  const socialUrls: Record<string, string> = {};
-  if (author.website_url) socialUrls.website = author.website_url;
-  if (author.linkedin_url) socialUrls.linkedin = author.linkedin_url;
-  if (author.twitter_url) socialUrls.twitter = author.twitter_url;
-  if (Object.keys(socialUrls).length > 0) payload.social_urls = socialUrls;
-  if (author.profile_image_source_url) payload.profile_image_source_url = author.profile_image_source_url;
-
-  return payload;
-}
-
-function stringifyUnknownValue(value: unknown): string | null {
-  if (typeof value === "string") {
-    const normalized = value.trim();
-    return normalized.length > 0 ? normalized : null;
-  }
-
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-
-  if (Array.isArray(value)) {
-    const parts = value.map((entry) => stringifyUnknownValue(entry)).filter(Boolean) as string[];
-    return parts.length > 0 ? parts.join(", ") : null;
-  }
-
-  if (!value || typeof value !== "object") return null;
-
-  const record = value as Record<string, unknown>;
-  const summaryKeys = ["name", "title", "description", "summary", "segment", "persona"];
-  for (const key of summaryKeys) {
-    const match = Object.entries(record).find(([candidate]) => candidate.toLowerCase() === key)?.[1];
-    const normalized = stringifyUnknownValue(match);
-    if (normalized) return normalized;
-  }
-
-  return null;
-}
-
-function normalizeContextKey(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function tryParseJsonLikeString(value: unknown): unknown {
-  if (typeof value !== "string") return value;
-
-  const trimmed = value.trim();
-  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return value;
-
-  try {
-    return JSON.parse(trimmed);
-  } catch {
-    return value;
-  }
-}
-
-function collectMatchingContextEntries(
-  value: unknown,
-  normalizedTargetKeys: Set<string>,
-  visited: WeakSet<object>,
-  matches: unknown[]
-) {
-  const parsedValue = tryParseJsonLikeString(value);
-
-  if (Array.isArray(parsedValue)) {
-    for (const item of parsedValue) {
-      collectMatchingContextEntries(item, normalizedTargetKeys, visited, matches);
-    }
-    return;
-  }
-
-  if (!parsedValue || typeof parsedValue !== "object") return;
-  if (visited.has(parsedValue)) return;
-  visited.add(parsedValue);
-
-  const record = parsedValue as Record<string, unknown>;
-  for (const [candidateKey, candidateValue] of Object.entries(record)) {
-    if (normalizedTargetKeys.has(normalizeContextKey(candidateKey))) {
-      matches.push(candidateValue);
-    }
-
-    collectMatchingContextEntries(candidateValue, normalizedTargetKeys, visited, matches);
-  }
-}
-
-function getBrandContextEntries(brand: BrandVisualContextResponse | null, keys: string[]) {
-  if (!brand) return [];
-
-  const normalizedTargetKeys = new Set(keys.map((key) => normalizeContextKey(key)));
-  const sources = [brand as unknown, brand.visual_style_guide, brand.visual_prompt_contract] as Array<unknown>;
-  const visited = new WeakSet<object>();
-  const matches: unknown[] = [];
-
-  for (const source of sources) {
-    collectMatchingContextEntries(source, normalizedTargetKeys, visited, matches);
-  }
-
-  return matches;
-}
-
-function getBrandContextEntry(brand: BrandVisualContextResponse | null, keys: string[]) {
-  const entries = getBrandContextEntries(brand, keys);
-  return entries[0] ?? null;
-}
-
-function getBrandContextValue(brand: BrandVisualContextResponse | null, keys: string[]) {
-  const entries = getBrandContextEntries(brand, keys);
-  for (const entry of entries) {
-    const normalized = stringifyUnknownValue(entry);
-    if (normalized) return normalized;
-  }
-  return null;
-}
-
-function getStringListFromUnknown(value: unknown): string[] {
-  const parsed = tryParseJsonLikeString(value);
-  if (!parsed) return [];
-
-  if (Array.isArray(parsed)) {
-    return parsed
-      .map((entry) => stringifyUnknownValue(entry))
-      .filter((entry): entry is string => Boolean(entry))
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
-  }
-
-  if (typeof parsed === "object") {
-    return Object.values(parsed as Record<string, unknown>)
-      .map((entry) => stringifyUnknownValue(entry))
-      .filter((entry): entry is string => Boolean(entry))
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
-  }
-
-  const singleValue = stringifyUnknownValue(parsed);
-  return singleValue ? [singleValue] : [];
-}
-
-function extractIcpNicheNames(brand: BrandVisualContextResponse | null) {
-  const entries = getBrandContextEntries(brand, ["suggested_icp_niches", "icp_niches", "recommended_icp_niches"]);
-  if (entries.length === 0) return [];
-
-  const values = entries.flatMap((entry) => {
-    const parsed = tryParseJsonLikeString(entry);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .map((item) => {
-        if (typeof item === "string") return item;
-        if (!item || typeof item !== "object") return null;
-
-        const record = item as Record<string, unknown>;
-        return (
-          stringifyUnknownValue(record.niche_name) ??
-          stringifyUnknownValue(record.name) ??
-          stringifyUnknownValue(record.title) ??
-          stringifyUnknownValue(record.segment)
-        );
-      })
-      .filter((item): item is string => Boolean(item))
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-  });
-
-  return Array.from(new Set(values));
-}
-
-function extractDifferentiators(brand: BrandVisualContextResponse | null) {
-  const keys = [
-    "suggested_differentiators",
-    "differentiators",
-    "key_differentiators",
-    "product_differentiators",
-    "competitive_differentiators",
-    "unique_value_propositions",
-    "unique_value_props",
-    "usp",
-  ];
-
-  for (const key of keys) {
-    const entries = getBrandContextEntries(brand, [key]);
-    for (const entry of entries) {
-      if (!entry) continue;
-
-      const values = getStringListFromUnknown(entry);
-      if (values.length > 0) {
-        return Array.from(new Set(values));
-      }
-    }
-  }
-
-  return [];
-}
-
-function ShimmerPlaceholder({ className }: { className: string }) {
-  return (
-    <div className={`relative overflow-hidden rounded-md bg-slate-200/90 ${className}`}>
-      <motion.div
-        className="absolute inset-y-0 -left-1/3 w-1/3 bg-gradient-to-r from-transparent via-white/90 to-transparent"
-        animate={{ x: ["-140%", "360%"] }}
-        transition={{ duration: 1.35, repeat: Infinity, ease: "linear" }}
-      />
-    </div>
-  );
-}
-
-function buildOnboardingUrl({
-  step,
-  projectId,
-  setupRunId,
-  setupTaskId,
-  prefill,
-}: {
-  step: 1 | 2 | 3 | 4;
-  projectId?: string | null;
-  setupRunId?: string | null;
-  setupTaskId?: string | null;
-  prefill?: { domain?: string; name?: string; description?: string };
-}) {
-  const search = new URLSearchParams();
-  search.set("step", String(step));
-
-  if (projectId) search.set("projectId", projectId);
-  if (setupRunId) search.set("setupRunId", setupRunId);
-  if (setupTaskId) search.set("setupTaskId", setupTaskId);
-
-  if (prefill?.domain) search.set("domain", prefill.domain);
-  if (prefill?.name) search.set("name", prefill.name);
-  if (prefill?.description) search.set("description", prefill.description);
-
-  return `/projects/new?${search.toString()}`;
-}
+const INTEGRATION_GUIDE_PATH = "/integration/guide/donkey-client.md";
 
 async function handleUnauthorized(api: ApiClient) {
   return redirect("/login", {
@@ -602,6 +137,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     domain: sanitizeDomainInput(String(url.searchParams.get("domain") ?? "")),
     name: String(url.searchParams.get("name") ?? "").trim(),
     description: String(url.searchParams.get("description") ?? "").trim(),
+    posts_per_week:
+      parsePostsPerWeek(url.searchParams.get("posts_per_week")) ??
+      DEFAULT_POSTS_PER_WEEK,
   };
 
   if (step > 1 && (!projectId || !setupRunId || !setupTaskId)) {
@@ -612,6 +150,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         setupRunId: null,
         setupTaskId: null,
         project: null,
+        integrationGuide: null,
         prefill,
       } satisfies LoaderData,
       { headers: await api.commit() }
@@ -619,11 +158,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   let project: ProjectResponse | null = null;
+  let integrationGuide: string | null = null;
   if (projectId) {
     const projectResponse = await api.fetch(`/projects/${projectId}`);
     if (projectResponse.status === 401) return handleUnauthorized(api);
     if (projectResponse.ok) {
       project = (await projectResponse.json()) as ProjectResponse;
+    }
+  }
+
+  if (step >= 4) {
+    const guideResponse = await api.fetch(INTEGRATION_GUIDE_PATH);
+    if (guideResponse.status === 401) return handleUnauthorized(api);
+    if (guideResponse.ok) {
+      integrationGuide = await guideResponse.text();
     }
   }
 
@@ -634,6 +182,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       setupRunId,
       setupTaskId,
       project,
+      integrationGuide,
       prefill,
     } satisfies LoaderData,
     {
@@ -652,17 +201,22 @@ export async function action({ request }: Route.ActionArgs) {
     const domain = sanitizeDomainInput(rawDomain);
     const name = String(formData.get("name") ?? "").trim();
     const description = String(formData.get("description") ?? "").trim();
+    const postsPerWeek = parsePostsPerWeek(formData.get("posts_per_week"));
 
     const domainMissing = !domain;
     const domainInvalid = !domainMissing && !isValidDomain(domain);
-
-    if (domainMissing || domainInvalid || !name) {
+    if (domainMissing || domainInvalid || !name || postsPerWeek === null) {
       return data(
         {
-          error: domainInvalid ? "Please enter a valid domain." : "Project name and domain are required.",
+          error: domainInvalid
+            ? "Please enter a valid domain."
+            : postsPerWeek === null
+              ? "Choose how many posts to publish per week."
+              : "Project name and domain are required.",
           fieldErrors: {
             domain: domainMissing ? "Domain is required." : domainInvalid ? "Enter a valid domain (e.g. example.com)." : undefined,
             name: !name ? "Project name is required." : undefined,
+            posts_per_week: postsPerWeek === null ? `Choose a value between ${MIN_POSTS_PER_WEEK} and ${MAX_POSTS_PER_WEEK}.` : undefined,
           },
         } satisfies ActionData,
         { status: 400, headers: await api.commit() }
@@ -675,6 +229,7 @@ export async function action({ request }: Route.ActionArgs) {
       description: description || null,
       primary_language: "en",
       primary_locale: "en-US",
+      posts_per_week: postsPerWeek,
     };
 
     const bootstrapResponse = await api.fetch("/projects/onboarding/bootstrap", {
@@ -710,7 +265,7 @@ export async function action({ request }: Route.ActionArgs) {
     const setupTaskId = String(formData.get("setup_task_id") ?? "").trim();
     const primaryLocale = String(formData.get("primary_locale") ?? "en-US").trim() || "en-US";
     const primaryLanguage = String(formData.get("primary_language") ?? "en").trim() || "en";
-    const preset = parseSetupPreset(String(formData.get("preset") ?? "traffic_growth"));
+    const postsPerWeek = parsePostsPerWeek(formData.get("posts_per_week"));
 
     if (!projectId || !setupRunId || !setupTaskId) {
       return data({ error: "Missing onboarding context." } satisfies ActionData, {
@@ -719,11 +274,24 @@ export async function action({ request }: Route.ActionArgs) {
       });
     }
 
+    if (postsPerWeek === null) {
+      return data(
+        {
+          error: "Choose how many posts to publish per week.",
+          fieldErrors: { posts_per_week: `Choose a value between ${MIN_POSTS_PER_WEEK} and ${MAX_POSTS_PER_WEEK}.` },
+        } satisfies ActionData,
+        {
+          status: 400,
+          headers: await api.commit(),
+        }
+      );
+    }
+
     const updatePayload: ProjectUpdate = {
       primary_language: primaryLanguage,
       primary_locale: primaryLocale,
-      goals: buildPresetGoals(preset),
-      constraints: buildPresetConstraints(preset),
+      posts_per_week: postsPerWeek,
+      constraints: buildPresetConstraints("traffic_growth"),
     };
 
     const updateResponse = await api.fetch(`/projects/${projectId}`, {
@@ -736,7 +304,7 @@ export async function action({ request }: Route.ActionArgs) {
     if (!updateResponse.ok) {
       const apiMessage = await readApiErrorMessage(updateResponse);
       return data(
-        { error: apiMessage ?? "Unable to update project strategy." } satisfies ActionData,
+        { error: apiMessage ?? "Unable to update project settings." } satisfies ActionData,
         { status: updateResponse.status, headers: await api.commit() }
       );
     }
@@ -816,6 +384,107 @@ export async function action({ request }: Route.ActionArgs) {
     return redirect(
       buildOnboardingUrl({
         step: 4,
+        projectId,
+        setupRunId,
+        setupTaskId,
+      }),
+      { headers: await api.commit() }
+    );
+  }
+
+  if (intent === "generateProjectApiKey") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    if (!projectId) {
+      return data({ error: "Missing project context." } satisfies ActionData, {
+        status: 400,
+        headers: await api.commit(),
+      });
+    }
+
+    const response = await api.fetch(`/projects/${encodeURIComponent(projectId)}/api-key`, {
+      method: "POST",
+    });
+
+    if (response.status === 401) return handleUnauthorized(api);
+
+    if (!response.ok) {
+      const apiMessage = await readApiErrorMessage(response);
+      return data(
+        {
+          error: apiMessage ?? "Unable to generate a new API key right now.",
+        } satisfies ActionData,
+        {
+          status: response.status,
+          headers: await api.commit(),
+        }
+      );
+    }
+
+    const generatedKey = (await response.json()) as ProjectApiKeyResponse;
+    return data(
+      {
+        generatedKey,
+      } satisfies ActionData,
+      {
+        headers: await api.commit(),
+      }
+    );
+  }
+
+  if (intent === "generateProjectWebhookSecret") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    if (!projectId) {
+      return data({ error: "Missing project context." } satisfies ActionData, {
+        status: 400,
+        headers: await api.commit(),
+      });
+    }
+
+    const response = await api.fetch(`/projects/${encodeURIComponent(projectId)}/webhook-secret`, {
+      method: "POST",
+    });
+
+    if (response.status === 401) return handleUnauthorized(api);
+
+    if (!response.ok) {
+      const apiMessage = await readApiErrorMessage(response);
+      return data(
+        {
+          error: apiMessage ?? "Unable to generate webhook secret right now.",
+        } satisfies ActionData,
+        {
+          status: response.status,
+          headers: await api.commit(),
+        }
+      );
+    }
+
+    const generatedWebhookSecret = (await response.json()) as ProjectWebhookSecretResponse;
+    return data(
+      {
+        generatedWebhookSecret,
+      } satisfies ActionData,
+      {
+        headers: await api.commit(),
+      }
+    );
+  }
+
+  if (intent === "continueAfterIntegrations") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    const setupRunId = String(formData.get("setup_run_id") ?? "").trim();
+    const setupTaskId = String(formData.get("setup_task_id") ?? "").trim();
+
+    if (!projectId || !setupRunId || !setupTaskId) {
+      return data({ error: "Missing onboarding context." } satisfies ActionData, {
+        status: 400,
+        headers: await api.commit(),
+      });
+    }
+
+    return redirect(
+      buildOnboardingUrl({
+        step: 5,
         projectId,
         setupRunId,
         setupTaskId,
@@ -939,6 +608,94 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
+  if (intent === "proxyAuthorImageUpload") {
+    const authorClientId = String(formData.get("author_client_id") ?? "").trim();
+    const authorId = String(formData.get("author_id") ?? "").trim();
+    const uploadJson = String(formData.get("upload_json") ?? "").trim();
+    const uploadedFile = formData.get("file");
+
+    if (!authorId || !uploadJson || !(uploadedFile instanceof File)) {
+      return data(
+        { error: "Missing image upload context." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const contentType = (uploadedFile.type || "").trim();
+    if (!contentType.toLowerCase().startsWith("image/")) {
+      return data(
+        { error: "Profile image must be a valid image MIME type." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    let parsedUploadValue: unknown;
+    try {
+      parsedUploadValue = JSON.parse(uploadJson);
+    } catch {
+      return data(
+        { error: "Invalid signed upload payload." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    if (!parsedUploadValue || typeof parsedUploadValue !== "object") {
+      return data(
+        { error: "Invalid signed upload payload." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const uploadRecord = parsedUploadValue as Record<string, unknown>;
+    const uploadUrl = normalizeOptionalString(uploadRecord.upload_url);
+    const uploadMethod = normalizeOptionalString(uploadRecord.upload_method) ?? "PUT";
+    const objectKey = normalizeOptionalString(uploadRecord.object_key);
+    const requiredHeadersValue =
+      typeof uploadRecord.required_headers === "object" && uploadRecord.required_headers !== null
+        ? (uploadRecord.required_headers as Record<string, unknown>)
+        : {};
+
+    if (!uploadUrl || !objectKey) {
+      return data(
+        { error: "Invalid signed upload payload." } satisfies AuthorImageUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const uploadHeaders = new Headers();
+    for (const [key, value] of Object.entries(requiredHeadersValue)) {
+      if (typeof value === "string") uploadHeaders.set(key, value);
+    }
+    if (!uploadHeaders.has("Content-Type")) {
+      uploadHeaders.set("Content-Type", contentType);
+    }
+
+    const binaryBody = new Uint8Array(await uploadedFile.arrayBuffer());
+    const uploadResponse = await fetch(uploadUrl, {
+      method: uploadMethod,
+      headers: uploadHeaders,
+      body: binaryBody,
+    });
+
+    if (!uploadResponse.ok) {
+      return data(
+        { error: `Image upload failed (${uploadResponse.status}).` } satisfies AuthorImageUploadActionResponse,
+        { status: uploadResponse.status, headers: await api.commit() }
+      );
+    }
+
+    return data(
+      {
+        author_client_id: authorClientId || undefined,
+        author_id: authorId,
+        uploaded: true,
+        profile_image_object_key: objectKey,
+        profile_image_mime_type: contentType,
+      } satisfies AuthorImageUploadActionResponse,
+      { headers: await api.commit() }
+    );
+  }
+
   return data({ error: "Unsupported action." } satisfies ActionData, {
     status: 400,
     headers: await api.commit(),
@@ -946,7 +703,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function ProjectSetupRoute() {
-  const { step, project, projectId, setupRunId, setupTaskId, prefill } = useLoaderData<typeof loader>() as LoaderData;
+  const { step, project, projectId, setupRunId, setupTaskId, integrationGuide, prefill } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const navigation = useNavigation();
 
@@ -957,12 +714,14 @@ export default function ProjectSetupRoute() {
   const [domain, setDomain] = useState(prefill.domain);
   const [name, setName] = useState(prefill.name);
   const [description, setDescription] = useState(prefill.description);
+  const [postsPerWeek, setPostsPerWeek] = useState(() =>
+    clampPostsPerWeek(project?.posts_per_week ?? prefill.posts_per_week ?? DEFAULT_POSTS_PER_WEEK)
+  );
   const [nameDirty, setNameDirty] = useState(Boolean(prefill.name));
-  const [expandedAsset, setExpandedAsset] = useState<{ url: string; role: string } | null>(null);
+  const [expandedAsset, setExpandedAsset] = useState<ExpandedAsset | null>(null);
   const [assetImageErrors, setAssetImageErrors] = useState<Record<string, boolean>>({});
 
   const [country, setCountry] = useState("worldwide");
-  const [preset, setPreset] = useState<SetupPreset>("traffic_growth");
   const [authors, setAuthors] = useState<AuthorDraft[]>([createEmptyAuthorDraft("author-1")]);
   const authorImageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [authorImageFileNames, setAuthorImageFileNames] = useState<Record<string, string>>({});
@@ -978,14 +737,22 @@ export default function ProjectSetupRoute() {
   const [welcomeStep, setWelcomeStep] = useState<"intro" | "focus" | "done">("intro");
   const [strategyDismissed, setStrategyDismissed] = useState(false);
   const [authorsDismissed, setAuthorsDismissed] = useState(false);
+  const [integrationsDismissed, setIntegrationsDismissed] = useState(false);
   const [setupDismissed, setSetupDismissed] = useState(false);
 
-  const derivedLocale = useMemo(() => countryToLocale(country), [country]);
+  const derivedLocale = useMemo<LocaleSelection>(() => countryToLocale(country), [country]);
 
   const isSubmitting = navigation.state !== "idle";
   const domainIsValid = isValidDomain(domain);
   const inlineDomainError = domain.length > 0 && !domainIsValid ? "Enter a valid domain (e.g. example.com)." : null;
   const domainError = domainIsValid ? null : actionData?.fieldErrors?.domain ?? inlineDomainError;
+  const postsPerWeekError = actionData?.fieldErrors?.posts_per_week ?? null;
+  const generatedKey = actionData?.generatedKey ?? null;
+  const generatedWebhookSecret = actionData?.generatedWebhookSecret ?? null;
+  const currentIntent = navigation.formData?.get("intent")?.toString() ?? "";
+  const isGeneratingApiKey = navigation.state !== "idle" && currentIntent === "generateProjectApiKey";
+  const isGeneratingWebhookSecret = navigation.state !== "idle" && currentIntent === "generateProjectWebhookSecret";
+  const isContinuingAfterIntegrations = navigation.state !== "idle" && currentIntent === "continueAfterIntegrations";
   const authorsPayloadJson = useMemo(() => {
     const normalizedAuthors = authors
       .filter((author) => hasAuthorDraftContent(author))
@@ -1066,9 +833,10 @@ export default function ProjectSetupRoute() {
         domain: project?.domain ?? domain,
         name: project?.name ?? name,
         description: project?.description ?? description,
+        posts_per_week: project?.posts_per_week ?? postsPerWeek,
       },
     });
-  }, [description, domain, name, project?.description, project?.domain, project?.name]);
+  }, [description, domain, name, postsPerWeek, project?.description, project?.domain, project?.name, project?.posts_per_week]);
 
   useEffect(() => {
     taskStatusRef.current = taskStatus;
@@ -1126,7 +894,7 @@ export default function ProjectSetupRoute() {
   }, [projectId, setupTaskId]);
 
   useEffect(() => {
-    if (step < 2 || !setupTaskId) return;
+    if (step !== 5 || !setupTaskId) return;
     let intervalId: number | null = null;
 
     const poll = () => {
@@ -1207,8 +975,9 @@ export default function ProjectSetupRoute() {
       onboarding.advance({ projectId: projectId ?? undefined });
       setStrategyDismissed(false);
       setAuthorsDismissed(false);
+      setIntegrationsDismissed(false);
     }
-    if (step === 4 && onboarding.isPhase("strategy")) {
+    if (step === 5 && onboarding.isPhase("strategy")) {
       onboarding.advance();
       setSetupDismissed(false);
     }
@@ -1217,6 +986,9 @@ export default function ProjectSetupRoute() {
   useEffect(() => {
     if (step === 3) {
       setAuthorsDismissed(false);
+    }
+    if (step === 4) {
+      setIntegrationsDismissed(false);
     }
   }, [step]);
 
@@ -1274,6 +1046,56 @@ export default function ProjectSetupRoute() {
         reject(error instanceof Error ? error : new Error("Unable to prepare image upload."));
       }
     });
+  }
+
+  async function proxyAuthorImageUpload(
+    authorClientId: string,
+    authorId: string,
+    upload: AuthorProfileImageSignedUploadResponse,
+    file: File
+  ) {
+    const formPayload = new FormData();
+    formPayload.set("intent", "proxyAuthorImageUpload");
+    formPayload.set("author_client_id", authorClientId);
+    formPayload.set("author_id", authorId);
+    formPayload.set("upload_json", JSON.stringify(upload));
+    formPayload.set("file", file);
+
+    const actionUrl = `${window.location.pathname}${window.location.search}`;
+    const response = await fetch(actionUrl, {
+      method: "POST",
+      body: formPayload,
+      credentials: "same-origin",
+    });
+
+    let payload: AuthorImageUploadActionResponse | null = null;
+    try {
+      payload = (await response.json()) as AuthorImageUploadActionResponse;
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || payload?.error) {
+      throw new Error(payload?.error ?? `Image upload failed (${response.status}).`);
+    }
+  }
+
+  function markAuthorImageUploadSuccess(authorId: string, file: File) {
+    const previewUrl = URL.createObjectURL(file);
+    setAuthorImagePreviewUrls((previous) => {
+      const priorPreviewUrl = previous[authorId];
+      if (priorPreviewUrl) {
+        URL.revokeObjectURL(priorPreviewUrl);
+      }
+      return {
+        ...previous,
+        [authorId]: previewUrl,
+      };
+    });
+    setAuthorImageUploadStatuses((previous) => ({
+      ...previous,
+      [authorId]: { state: "uploaded", message: "Image uploaded successfully." },
+    }));
   }
 
   async function handleAuthorImageFileChange(authorId: string, files: FileList | null) {
@@ -1377,28 +1199,23 @@ export default function ProjectSetupRoute() {
       if (!uploadResponse.ok) {
         throw new Error(`Image upload failed (${uploadResponse.status}).`);
       }
-
-      const previewUrl = URL.createObjectURL(file);
-      setAuthorImagePreviewUrls((previous) => {
-        const priorPreviewUrl = previous[authorId];
-        if (priorPreviewUrl) {
-          URL.revokeObjectURL(priorPreviewUrl);
-        }
-        return {
-          ...previous,
-          [authorId]: previewUrl,
-        };
-      });
-      setAuthorImageUploadStatuses((previous) => ({
-        ...previous,
-        [authorId]: { state: "uploaded", message: "Image uploaded successfully." },
-      }));
+      markAuthorImageUploadSuccess(authorId, file);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Image upload failed.";
       setAuthorImageUploadStatuses((previous) => ({
         ...previous,
-        [authorId]: { state: "error", message },
+        [authorId]: { state: "uploading", message: "Direct upload failed, retrying through server relay..." },
       }));
+
+      try {
+        await proxyAuthorImageUpload(authorId, uploadPreparation.author_id, uploadPreparation.upload, file);
+        markAuthorImageUploadSuccess(authorId, file);
+      } catch (relayError) {
+        const message = relayError instanceof Error ? relayError.message : "Image upload failed.";
+        setAuthorImageUploadStatuses((previous) => ({
+          ...previous,
+          [authorId]: { state: "error", message },
+        }));
+      }
     }
 
     if (authorImageInputRefs.current[authorId]) {
@@ -1406,735 +1223,143 @@ export default function ProjectSetupRoute() {
     }
   }
 
-  const stepLabels = ["Basic project info", "Strategy + SEO inputs", "Authors (optional)", "Setup progress"];
+  const stepThreeBackLink = buildOnboardingUrl({
+    step: 2,
+    projectId,
+    setupRunId,
+    setupTaskId,
+  });
+  const stepFourBackLink = buildOnboardingUrl({
+    step: 3,
+    projectId,
+    setupRunId,
+    setupTaskId,
+  });
 
   return (
     <div className="space-y-6" data-onboarding-focus="page-content">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#2f6f71]">Guided Setup</p>
-          <h1 className="font-display text-3xl font-bold text-slate-900">Create a new pipeline project</h1>
-        </div>
-        <Link to="/project" className="text-sm font-semibold text-slate-600 hover:text-slate-900">
-          Back to project
-        </Link>
-      </div>
-
-      <Card>
-        <CardContent className="pt-5">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {stepLabels.map((label, index) => {
-              const stepNumber = index + 1;
-              const active = stepNumber === step;
-              const completed = stepNumber < step;
-
-              return (
-                <div
-                  key={label}
-                  className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-                    active
-                      ? "border-[#2f6f71] bg-[#2f6f71]/10 text-[#1e5052]"
-                      : completed
-                        ? "border-emerald-300 bg-emerald-100 text-emerald-900"
-                        : "border-slate-200 bg-slate-50 text-slate-500"
-                  }`}
-                >
-                  <span className="mr-2 text-xs">{String(stepNumber).padStart(2, "0")}</span>
-                  {label}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
-      {actionData?.error ? (
-        <Card className="border-rose-300 bg-rose-50">
-          <CardContent className="pt-5 text-sm font-semibold text-rose-700">{actionData.error}</CardContent>
-        </Card>
-      ) : null}
+      <SetupPageHeader />
+      <SetupStepTracker step={step} />
+      <SetupActionErrorCard error={actionData?.error} />
 
       {step === 1 ? (
-        <motion.div key="step1" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <Form method="post" className="space-y-6">
-            <input type="hidden" name="intent" value="bootstrapProject" />
-            <input type="hidden" name="domain" value={domain} />
-            <input type="hidden" name="name" value={name} />
-            <input type="hidden" name="description" value={description} />
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Basic project info</CardTitle>
-                <CardDescription>Create the project and initialize onboarding setup in the background.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
-                <label className="grid gap-1.5 text-sm md:col-span-2">
-                  <span className="font-semibold text-slate-700">Domain</span>
-                  <div
-                    className={`flex h-11 items-center rounded-xl border bg-white text-sm ${
-                      domainError ? "border-rose-400" : "border-slate-300"
-                    }`}
-                  >
-                    <span className="select-none pl-3 text-slate-400">https://</span>
-                    <input
-                      type="text"
-                      value={domain}
-                      onChange={(event) => handleDomainChange(event.target.value)}
-                      placeholder="example.com"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      aria-invalid={Boolean(domainError)}
-                      className="h-full min-w-0 flex-1 rounded-r-xl border-0 bg-transparent px-1 pr-3 text-sm outline-none"
-                    />
-                  </div>
-                  {domainError ? <span className="text-xs font-semibold text-rose-600">{domainError}</span> : null}
-                </label>
-
-                <label className="grid gap-1.5 text-sm">
-                  <span className="font-semibold text-slate-700">Project name</span>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(event) => {
-                      setNameDirty(true);
-                      setName(event.target.value);
-                    }}
-                    placeholder="Acme Growth Engine"
-                    className="h-11 rounded-xl border border-slate-300 px-3 text-sm"
-                  />
-                  {actionData?.fieldErrors?.name ? (
-                    <span className="text-xs font-semibold text-rose-600">{actionData.fieldErrors.name}</span>
-                  ) : null}
-                </label>
-
-                <label className="grid gap-1.5 text-sm">
-                  <span className="font-semibold text-slate-700">Description (optional)</span>
-                  <input
-                    type="text"
-                    value={description}
-                    onChange={(event) => setDescription(event.target.value)}
-                    placeholder="High-intent content pipeline"
-                    className="h-11 rounded-xl border border-slate-300 px-3 text-sm"
-                  />
-                </label>
-              </CardContent>
-            </Card>
-
-            <div className="flex justify-end">
-              <Button type="submit" size="lg" disabled={isSubmitting || !domainIsValid}>
-                {isSubmitting ? "Setting up..." : "Next step"}
-              </Button>
-            </div>
-          </Form>
-
-          {onboarding.isPhase("welcome") && welcomeStep === "intro" && (
-            <OnboardingOverlay
-              onNext={() => setWelcomeStep("focus")}
-              nextLabel="Let's go!"
-            >
-              <DonkeyBubble title="Welcome to Donkey SEO!">
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  I'm your professional<strong className="text-slate-800"> SEO assistant</strong>. I'll help you:
-                </p>
-                <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-600">
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 text-[#2f6f71]">&#x2713;</span>
-                    <span>Rank higher on <strong className="text-slate-800">Google search results</strong></span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 text-[#2f6f71]">&#x2713;</span>
-                    <span>Get featured in <strong className="text-slate-800">Google's AI Overview</strong></span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 text-[#2f6f71]">&#x2713;</span>
-                    <span>All on <strong className="text-slate-800">autopilot</strong>; minimal effort on your end</span>
-                  </li>
-                </ul>
-              </DonkeyBubble>
-            </OnboardingOverlay>
-          )}
-
-          {onboarding.isPhase("welcome") && welcomeStep === "focus" && (
-            <OnboardingOverlay
-              onNext={() => setWelcomeStep("done")}
-              nextLabel="Got it!"
-              focusSelector='[data-onboarding-focus="page-content"]'
-            >
-              <DonkeyBubble title="Let's set up your first project">
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Enter your <strong className="text-slate-800">website domain</strong> and I'll analyze your site to build a tailored SEO strategy.
-                  The <strong className="text-slate-800">project name</strong> is auto-suggested from your domain.
-                </p>
-              </DonkeyBubble>
-            </OnboardingOverlay>
-          )}
-        </motion.div>
+        <StepOneProjectInfoStep
+          domain={domain}
+          name={name}
+          description={description}
+          postsPerWeek={postsPerWeek}
+          domainError={domainError}
+          nameError={actionData?.fieldErrors?.name}
+          postsPerWeekError={postsPerWeekError}
+          isSubmitting={isSubmitting}
+          domainIsValid={domainIsValid}
+          onDomainChange={handleDomainChange}
+          onNameChange={(value) => {
+            setNameDirty(true);
+            setName(value);
+          }}
+          onDescriptionChange={setDescription}
+          onPostsPerWeekChange={setPostsPerWeek}
+          showWelcomeIntro={onboarding.isPhase("welcome") && welcomeStep === "intro"}
+          showWelcomeFocus={onboarding.isPhase("welcome") && welcomeStep === "focus"}
+          onWelcomeIntroNext={() => setWelcomeStep("focus")}
+          onWelcomeFocusNext={() => setWelcomeStep("done")}
+        />
       ) : null}
 
       {step === 2 ? (
-        <motion.div key="step2" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <Form method="post" className="space-y-6">
-            <input type="hidden" name="intent" value="updateProjectStrategy" />
-            <input type="hidden" name="project_id" value={projectId ?? ""} />
-            <input type="hidden" name="setup_run_id" value={setupRunId ?? ""} />
-            <input type="hidden" name="setup_task_id" value={setupTaskId ?? ""} />
-            <input type="hidden" name="preset" value={preset} />
-            <input type="hidden" name="primary_locale" value={derivedLocale.locale} />
-            <input type="hidden" name="primary_language" value={derivedLocale.language} />
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Preset constraints</CardTitle>
-                <CardDescription>Choose a content strategy that matches your business goals.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-3">
-                {PRESET_OPTIONS.map((option) => {
-                  const active = option.value === preset;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setPreset(option.value)}
-                      className={`rounded-2xl border p-4 text-left transition-colors ${
-                        active ? "border-[#2f6f71] bg-[#2f6f71]/10" : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <p className="font-display text-lg font-bold text-slate-900">{option.title}</p>
-                      <p className="mt-1 text-sm leading-relaxed text-slate-600">{option.description}</p>
-                    </button>
-                  );
-                })}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Strategy + SEO inputs</CardTitle>
-                <CardDescription>Set the target country for your content and SEO strategy.</CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <label className="grid gap-1.5 text-sm">
-                  <span className="font-semibold text-slate-700">Target country</span>
-                  <Select value={country} onChange={(event) => setCountry(event.target.value)}>
-                    {COUNTRY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-              </CardContent>
-            </Card>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Link to={retryLink}>
-                <Button type="button" variant="outline">
-                  Back
-                </Button>
-              </Link>
-              <Button type="submit" size="lg" disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : "Save + continue"}
-              </Button>
-            </div>
-          </Form>
-
-          {onboarding.isPhase("strategy") && !strategyDismissed && (
-            <OnboardingOverlay
-              onNext={() => setStrategyDismissed(true)}
-              nextLabel="Got it!"
-            >
-              <DonkeyBubble title="Pick your strategy">
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Choose a <strong className="text-slate-800">content strategy</strong> that matches your business goals:
-                </p>
-                <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-600">
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 text-[#2f6f71]">&#x2022;</span>
-                    <span><strong className="text-slate-800">Traffic Growth</strong>: maximize organic visibility</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 text-[#2f6f71]">&#x2022;</span>
-                    <span><strong className="text-slate-800">Lead Generation</strong>: target buyer-intent queries</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="mt-0.5 text-[#2f6f71]">&#x2022;</span>
-                    <span><strong className="text-slate-800">Revenue Content</strong>: focus on money-page keywords</span>
-                  </li>
-                </ul>
-                <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                  Then select your <strong className="text-slate-800">target country</strong> and add optional author profiles in the next step.
-                </p>
-              </DonkeyBubble>
-            </OnboardingOverlay>
-          )}
-        </motion.div>
+        <StepTwoSeoInputsStep
+          projectId={projectId}
+          setupRunId={setupRunId}
+          setupTaskId={setupTaskId}
+          derivedLocale={derivedLocale}
+          country={country}
+          postsPerWeek={postsPerWeek}
+          postsPerWeekError={postsPerWeekError}
+          retryLink={retryLink}
+          isSubmitting={isSubmitting}
+          showStrategyOverlay={onboarding.isPhase("strategy") && !strategyDismissed}
+          onCountryChange={setCountry}
+          onPostsPerWeekChange={setPostsPerWeek}
+          onDismissStrategyOverlay={() => setStrategyDismissed(true)}
+        />
       ) : null}
 
       {step === 3 ? (
-        <motion.div key="step3-authors" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-          <Form method="post" className="space-y-6">
-            <input type="hidden" name="intent" value="saveProjectAuthors" />
-            <input type="hidden" name="project_id" value={projectId ?? ""} />
-            <input type="hidden" name="setup_run_id" value={setupRunId ?? ""} />
-            <input type="hidden" name="setup_task_id" value={setupTaskId ?? ""} />
-            <input type="hidden" name="authors_json" value={authorsPayloadJson} />
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Authors (optional)</CardTitle>
-                <CardDescription>
-                  Adding authors strengthens credibility and E-E-A-T signals. Articles can include consistent bylines, bios, and profile images from day one.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-
-                {authors.map((author, index) => (
-                  <div key={author.id} className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-900">Author {index + 1}</p>
-                    </div>
-
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <label className="grid gap-1.5 text-sm md:col-span-2">
-                        <span className="font-semibold text-slate-700">Name</span>
-                        <input
-                          type="text"
-                          value={author.name}
-                          onChange={(event) => updateAuthor(author.id, "name", event.target.value)}
-                          placeholder="Jane Doe"
-                          className="h-11 rounded-xl border border-slate-300 px-3 text-sm"
-                        />
-                      </label>
-
-                      <label className="grid gap-1.5 text-sm md:col-span-2">
-                        <span className="font-semibold text-slate-700">Bio</span>
-                        <textarea
-                          value={author.bio}
-                          onChange={(event) => updateAuthor(author.id, "bio", event.target.value)}
-                          placeholder="SEO strategist focused on B2B SaaS growth."
-                          rows={3}
-                          className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        />
-                      </label>
-
-                      <div className="grid gap-1.5 text-sm md:col-span-2">
-                        <span className="font-semibold text-slate-700">Profiles & socials</span>
-                        <div className="grid gap-2 md:grid-cols-3">
-                          <label className="relative">
-                            <span className="sr-only">Blog or website URL</span>
-                            <Globe className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                            <input
-                              type="text"
-                              value={author.website_url}
-                              onChange={(event) => updateAuthor(author.id, "website_url", event.target.value)}
-                              placeholder="Blog / website"
-                              className="h-11 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-sm"
-                            />
-                          </label>
-
-                          <label className="relative">
-                            <span className="sr-only">LinkedIn URL</span>
-                            <Linkedin className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                            <input
-                              type="text"
-                              value={author.linkedin_url}
-                              onChange={(event) => updateAuthor(author.id, "linkedin_url", event.target.value)}
-                              placeholder="LinkedIn"
-                              className="h-11 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-sm"
-                            />
-                          </label>
-
-                          <label className="relative">
-                            <span className="sr-only">X or Twitter URL</span>
-                            <Twitter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                            <input
-                              type="text"
-                              value={author.twitter_url}
-                              onChange={(event) => updateAuthor(author.id, "twitter_url", event.target.value)}
-                              placeholder="X / Twitter"
-                              className="h-11 w-full rounded-xl border border-slate-300 pl-9 pr-3 text-sm"
-                            />
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-1.5 text-sm md:col-span-2">
-                        <span className="font-semibold text-slate-700">Profile image</span>
-                        <div className="flex flex-wrap items-center gap-3">
-                          <input
-                            ref={(node) => {
-                              authorImageInputRefs.current[author.id] = node;
-                            }}
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            onChange={(event) => {
-                              void handleAuthorImageFileChange(author.id, event.target.files);
-                            }}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => triggerAuthorImagePicker(author.id)}
-                            disabled={authorImageUploadStatuses[author.id]?.state === "preparing" || authorImageUploadStatuses[author.id]?.state === "uploading"}
-                          >
-                            <Upload className="mr-2 h-4 w-4" />
-                            Upload image
-                          </Button>
-                          <span className="text-xs text-slate-500">{authorImageFileNames[author.id] ?? "No file selected"}</span>
-                        </div>
-                        {authorImagePreviewUrls[author.id] ? (
-                          <img
-                            src={authorImagePreviewUrls[author.id]}
-                            alt={`${author.name || "Author"} profile preview`}
-                            className="h-20 w-20 rounded-full border border-slate-200 object-cover"
-                          />
-                        ) : null}
-                        {authorImageUploadStatuses[author.id]?.message ? (
-                          <p
-                            className={`text-xs ${
-                              authorImageUploadStatuses[author.id]?.state === "error"
-                                ? "font-semibold text-rose-700"
-                                : "text-slate-600"
-                            }`}
-                          >
-                            {authorImageUploadStatuses[author.id]?.message}
-                          </p>
-                        ) : null}
-                        {author.persisted_author_id && author.profile_image_object_key ? (
-                          <p className="text-[11px] text-slate-400">
-                            Stored object: {author.profile_image_object_key}
-                          </p>
-                        ) : null}
-                        <p className="text-[11px] text-slate-500">
-                          Uploads use a signed URL and are sent directly from your browser.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {actionData?.fieldErrors?.authors ? (
-                  <p className="text-sm font-semibold text-rose-700">{actionData.fieldErrors.authors}</p>
-                ) : null}
-              </CardContent>
-            </Card>
-
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Link
-                to={buildOnboardingUrl({
-                  step: 2,
-                  projectId,
-                  setupRunId,
-                  setupTaskId,
-                })}
-              >
-                <Button type="button" variant="outline">
-                  Back
-                </Button>
-              </Link>
-              <Button type="submit" size="lg" disabled={isSubmitting || hasPendingAuthorImageUpload}>
-                {isSubmitting ? "Saving..." : "Continue to scraping"}
-              </Button>
-            </div>
-          </Form>
-
-          {onboarding.isPhase("strategy") && !authorsDismissed && (
-            <OnboardingOverlay
-              onNext={() => setAuthorsDismissed(true)}
-              nextLabel="Got it!"
-            >
-              <DonkeyBubble title="Add optional author profiles">
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Add real author details so generated articles include <strong className="text-slate-800">credible bylines</strong>.
-                </p>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  This strengthens perceived expertise and trust signals, which is good for SEO. Skip this step if you want and add authors later.
-                </p>
-              </DonkeyBubble>
-            </OnboardingOverlay>
-          )}
-        </motion.div>
+        <StepThreeAuthorsStep
+          projectId={projectId}
+          setupRunId={setupRunId}
+          setupTaskId={setupTaskId}
+          authors={authors}
+          authorsPayloadJson={authorsPayloadJson}
+          authorsFieldError={actionData?.fieldErrors?.authors}
+          isSubmitting={isSubmitting}
+          hasPendingAuthorImageUpload={hasPendingAuthorImageUpload}
+          backLink={stepThreeBackLink}
+          showAuthorsOverlay={onboarding.isPhase("strategy") && !authorsDismissed}
+          onAuthorChange={updateAuthor}
+          onAuthorImageInputRef={(authorId, node) => {
+            authorImageInputRefs.current[authorId] = node;
+          }}
+          onAuthorImagePickerClick={triggerAuthorImagePicker}
+          onAuthorImageFileChange={(authorId, files) => {
+            void handleAuthorImageFileChange(authorId, files);
+          }}
+          authorImagePreviewUrls={authorImagePreviewUrls}
+          authorImageFileNames={authorImageFileNames}
+          authorImageUploadStatuses={authorImageUploadStatuses}
+          onDismissAuthorsOverlay={() => setAuthorsDismissed(true)}
+        />
       ) : null}
 
       {step === 4 ? (
-        <motion.div key="step4" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Brand profile extraction</CardTitle>
-              <CardDescription>
-                We are fetching company name, ICP, product type, and scraped brand assets from your site.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-slate-900">Extraction status</p>
-                  <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${getStatusBadgeClass(task?.status)}`}>
-                    {formatStatusLabel(task?.status ?? "queued")}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-slate-600">
-                  {taskCurrentStepName
-                    ? `Current step: ${taskCurrentStepName}`
-                    : isTaskCompleted
-                      ? "Setup complete. Loading brand profile data."
-                      : "Analyzing your domain and extracting brand profile context."}
-                </p>
-                {taskTotalSteps ? (
-                  <p className="mt-1 text-xs font-semibold text-slate-500">
-                    {task?.stage ? `${formatStatusLabel(task.stage)} · ` : ""}Step {taskDisplayStep ?? 1} of {taskTotalSteps}
-                  </p>
-                ) : null}
-                <div className="mt-4">
-                  <Progress value={Math.max(0, Math.min(100, Math.round(taskProgress ?? 0)))} />
-                </div>
-                <p className="mt-2 text-right text-xs font-semibold text-[#1e5052]">
-                  {typeof taskProgress !== "number" || Number.isNaN(taskProgress)
-                    ? "Working..."
-                    : `${Math.round(taskProgress)}%`}
-                </p>
-                {taskError ? <p className="mt-3 text-sm font-semibold text-rose-700">{taskError}</p> : null}
-                {task?.error_message ? <p className="mt-3 text-sm font-semibold text-rose-700">{task.error_message}</p> : null}
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Company name</p>
-                  {!brand || (!companyName && !isTaskCompleted) ? (
-                    <div className="mt-2 space-y-2">
-                      <ShimmerPlaceholder className="h-5 w-48" />
-                      <p className="text-xs text-slate-500">Extracting company identity from homepage and metadata.</p>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{companyName ?? "Not detected yet"}</p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Product type</p>
-                  {!brand || (!productType && !isTaskCompleted) ? (
-                    <div className="mt-2 space-y-2">
-                      <ShimmerPlaceholder className="h-5 w-40" />
-                      <p className="text-xs text-slate-500">Classifying offer model and category.</p>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-sm font-semibold text-slate-900">{productType ?? "Not detected yet"}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Differentiators</p>
-                  {!brand || (differentiators.length === 0 && !isTaskCompleted) ? (
-                    <div className="mt-3 space-y-2">
-                      <ShimmerPlaceholder className="h-4 w-full" />
-                      <ShimmerPlaceholder className="h-4 w-11/12" />
-                      <ShimmerPlaceholder className="h-4 w-4/5" />
-                    </div>
-                  ) : differentiators.length > 0 ? (
-                    <ul className="mt-3 space-y-2 text-sm text-slate-700">
-                      {differentiators.slice(0, 6).map((item) => (
-                        <li key={item} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-600">No differentiators returned yet.</p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Suggested ICP niches</p>
-                  {!brand || (icpNicheNames.length === 0 && !isTaskCompleted) ? (
-                    <div className="mt-3 space-y-2">
-                      <ShimmerPlaceholder className="h-4 w-full" />
-                      <ShimmerPlaceholder className="h-4 w-5/6" />
-                    </div>
-                  ) : icpNicheNames.length > 0 ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {icpNicheNames.slice(0, 8).map((niche) => (
-                        <span
-                          key={niche}
-                          className="inline-flex items-center rounded-full border border-[#2f6f71]/30 bg-[#2f6f71]/10 px-2.5 py-1 text-xs font-semibold text-[#1e5052]"
-                        >
-                          {niche}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-600">No ICP niches returned yet.</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase tracking-wide text-slate-500">Scraped assets</p>
-                {!brand || ((!brand.brand_assets || brand.brand_assets.length === 0) && !isTaskCompleted) ? (
-                  <div className="mt-3 space-y-2">
-                    {[1, 2, 3].map((placeholder) => (
-                      <div key={placeholder} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                        <div className="flex items-center gap-3">
-                          <ShimmerPlaceholder className="h-8 w-8 rounded-lg" />
-                          <div className="min-w-0 flex-1 space-y-2">
-                            <ShimmerPlaceholder className="h-3 w-24" />
-                            <ShimmerPlaceholder className="h-3 w-full" />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : brand.brand_assets && brand.brand_assets.length > 0 ? (
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {brand.brand_assets.slice(0, 6).map((asset) => (
-                      <button
-                        key={asset.asset_id}
-                        type="button"
-                        className="group rounded-lg border border-slate-200 bg-slate-50 p-2 text-left transition-colors hover:border-[#2f6f71]/50 hover:bg-white"
-                        onClick={() => setExpandedAsset({ url: asset.source_url, role: asset.role })}
-                      >
-                        {assetImageErrors[asset.asset_id] ? (
-                          <div className="flex h-24 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-100 px-2 text-center text-xs text-slate-600">
-                            Preview unavailable
-                          </div>
-                        ) : (
-                          <img
-                            src={asset.source_url}
-                            alt={asset.role}
-                            loading="lazy"
-                            className="h-24 w-full rounded-md border border-slate-200 object-cover bg-white"
-                            onError={() =>
-                              setAssetImageErrors((previous) => ({
-                                ...previous,
-                                [asset.asset_id]: true,
-                              }))
-                            }
-                          />
-                        )}
-                        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{asset.role}</p>
-                        <p className="truncate text-xs text-slate-600">{asset.source_url}</p>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-sm text-slate-600">No scraped assets found yet.</p>
-                )}
-              </div>
-
-              {isTaskFailureLike ? (
-                <Card className="border-amber-300 bg-amber-50">
-                  <CardContent className="space-y-3 pt-5">
-                    <p className="text-sm font-semibold text-amber-900">
-                      Setup paused or failed. Retry onboarding to resume brand profile extraction.
-                    </p>
-                    <Link to={retryLink}>
-                      <Button type="button" variant="outline">
-                        Retry bootstrap/setup
-                      </Button>
-                    </Link>
-                  </CardContent>
-                </Card>
-              ) : null}
-
-            </CardContent>
-          </Card>
-
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Link to={retryLink}>
-              <Button type="button" variant="outline">
-                Restart onboarding
-              </Button>
-            </Link>
-
-            {projectId && isTaskCompleted ? (
-              <Form method="post" action={`/projects/${projectId}/discovery`}>
-                <input type="hidden" name="intent" value="startDiscoveryFromSetup" />
-                <Button type="submit" size="lg">
-                  Open discovery
-                </Button>
-              </Form>
-            ) : (
-              <Button type="button" size="lg" disabled>
-                Waiting for setup completion
-              </Button>
-            )}
-          </div>
-
-          {onboarding.isPhase("setup_progress") && !setupDismissed && (
-            <OnboardingOverlay
-              onNext={() => setSetupDismissed(true)}
-              nextLabel="Got it!"
-            >
-              <DonkeyBubble title={isTaskCompleted ? "Your brand profile is ready!" : "Analyzing your site..."}>
-                {isTaskCompleted ? (
-                  <>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                      I've extracted everything I need from your website:
-                    </p>
-                    <ul className="mt-2 space-y-1 text-sm leading-relaxed text-slate-600">
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5 text-emerald-600">&#x2713;</span>
-                        <span><strong className="text-slate-800">Company details</strong> and brand identity</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5 text-emerald-600">&#x2713;</span>
-                        <span><strong className="text-slate-800">Differentiators</strong> and unique selling points</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="mt-0.5 text-emerald-600">&#x2713;</span>
-                        <span><strong className="text-slate-800">Target audience</strong> and ICP niches</span>
-                      </li>
-                    </ul>
-                    <p className="mt-3 text-sm leading-relaxed text-slate-600">
-                      Discovery runs are triggered automatically once setup is complete.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                      I'm crawling your website to build a <strong className="text-slate-800">brand profile</strong>. This powers everything: from keyword research to content generation.
-                    </p>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                      This usually takes about a minute. Feel free to watch the progress below!
-                    </p>
-                  </>
-                )}
-              </DonkeyBubble>
-            </OnboardingOverlay>
-          )}
-        </motion.div>
+        <StepFourIntegrationsStep
+          projectId={projectId}
+          setupRunId={setupRunId}
+          setupTaskId={setupTaskId}
+          backLink={stepFourBackLink}
+          generatedKey={generatedKey}
+          generatedWebhookSecret={generatedWebhookSecret}
+          integrationGuide={integrationGuide}
+          isGeneratingApiKey={isGeneratingApiKey}
+          isGeneratingWebhookSecret={isGeneratingWebhookSecret}
+          isContinuing={isContinuingAfterIntegrations}
+          showIntegrationsOverlay={onboarding.isPhase("strategy") && !integrationsDismissed}
+          onDismissIntegrationsOverlay={() => setIntegrationsDismissed(true)}
+        />
       ) : null}
 
-      {expandedAsset ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4">
-          <button
-            type="button"
-            className="absolute inset-0"
-            aria-label="Close image preview"
-            onClick={() => setExpandedAsset(null)}
-          />
-          <div className="relative z-10 w-full max-w-5xl rounded-xl border border-slate-200 bg-white p-4 shadow-2xl">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-slate-900">{expandedAsset.role}</p>
-              <Button type="button" variant="outline" size="sm" onClick={() => setExpandedAsset(null)}>
-                Close
-              </Button>
-            </div>
-            <img src={expandedAsset.url} alt={expandedAsset.role} className="max-h-[75vh] w-full rounded-lg border border-slate-200 object-contain" />
-            <a
-              href={expandedAsset.url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex text-xs font-semibold text-[#1e5052] hover:underline"
-            >
-              Open source URL
-            </a>
-          </div>
-        </div>
+      {step === 5 ? (
+        <StepFiveSetupProgressStep
+          projectId={projectId}
+          task={task}
+          taskCurrentStepName={taskCurrentStepName}
+          taskTotalSteps={taskTotalSteps}
+          taskDisplayStep={taskDisplayStep}
+          taskProgress={taskProgress}
+          taskError={taskError}
+          isTaskCompleted={isTaskCompleted}
+          isTaskFailureLike={isTaskFailureLike}
+          brand={brand}
+          companyName={companyName}
+          productType={productType}
+          differentiators={differentiators}
+          icpNicheNames={icpNicheNames}
+          retryLink={retryLink}
+          assetImageErrors={assetImageErrors}
+          onAssetImageError={(assetId) =>
+            setAssetImageErrors((previous) => ({
+              ...previous,
+              [assetId]: true,
+            }))
+          }
+          onExpandedAssetChange={setExpandedAsset}
+          showSetupOverlay={onboarding.isPhase("setup_progress") && !setupDismissed}
+          onDismissSetupOverlay={() => setSetupDismissed(true)}
+        />
       ) : null}
+
+      <ExpandedAssetPreviewModal expandedAsset={expandedAsset} onClose={() => setExpandedAsset(null)} />
     </div>
   );
 }

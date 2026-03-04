@@ -25,6 +25,7 @@ type ContentBriefListResponse = components["schemas"]["ContentBriefListResponse"
 type ContentBriefResponse = components["schemas"]["ContentBriefResponse"];
 type ContentArticleListResponse = components["schemas"]["ContentArticleListResponse"];
 type ContentArticleResponse = components["schemas"]["ContentArticleResponse"];
+type StepExecutionResponse = components["schemas"]["StepExecutionResponse"];
 
 type LoaderData = {
   project: ProjectResponse;
@@ -38,6 +39,8 @@ type LoaderData = {
   articleTotal: number;
   articlesCompleted: number;
 };
+
+const STEP_SUCCESS_STATUSES = new Set(["completed", "success", "succeeded", "done"]);
 
 async function handleUnauthorized(api: ApiClient) {
   return redirect("/login", {
@@ -64,6 +67,23 @@ function isWithinRunWindow(timestamp: string, windowStartMs: number | null, wind
   if (windowStartMs !== null && parsedTimestamp < windowStartMs) return false;
   if (windowEndMs !== null && parsedTimestamp >= windowEndMs) return false;
   return true;
+}
+
+function isSuccessfulStepStatus(status: string | null | undefined) {
+  return STEP_SUCCESS_STATUSES.has(String(status ?? "").toLowerCase());
+}
+
+function isArticleGenerationStep(stepName: string | null | undefined) {
+  const normalized = String(stepName ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, "");
+  return normalized.includes("articlegeneration");
+}
+
+function hasCompletedArticleGenerationStep(steps: StepExecutionResponse[] | null | undefined) {
+  if (!steps || steps.length === 0) return false;
+  return steps.some((step) => isArticleGenerationStep(step.step_name) && isSuccessfulStepStatus(step.status));
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -117,6 +137,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const briefs = briefsResult.ok && briefsResult.data ? briefsResult.data.items ?? [] : [];
   const articles = articlesResult.ok && articlesResult.data ? articlesResult.data.items ?? [] : [];
   const briefIdsWithArticles = new Set(articles.map((article) => article.brief_id));
+  const briefsSortedNewestFirst = briefs.slice().sort((a, b) => {
+    const aTimestamp = parseTimestamp(a.created_at) ?? 0;
+    const bTimestamp = parseTimestamp(b.created_at) ?? 0;
+    return bTimestamp - aTimestamp;
+  });
+  const briefsWithArticlesSortedNewestFirst = briefsSortedNewestFirst.filter((brief) => briefIdsWithArticles.has(brief.id));
+  const briefsByTopicId = new Map<string, ContentBriefResponse[]>();
+  const briefsWithArticlesByTopicId = new Map<string, ContentBriefResponse[]>();
+  for (const brief of briefsSortedNewestFirst) {
+    if (!brief.topic_id) continue;
+    if (!briefsByTopicId.has(brief.topic_id)) {
+      briefsByTopicId.set(brief.topic_id, []);
+    }
+    briefsByTopicId.get(brief.topic_id)!.push(brief);
+
+    if (!briefIdsWithArticles.has(brief.id)) continue;
+    if (!briefsWithArticlesByTopicId.has(brief.topic_id)) {
+      briefsWithArticlesByTopicId.set(brief.topic_id, []);
+    }
+    briefsWithArticlesByTopicId.get(brief.topic_id)!.push(brief);
+  }
+
   const runPrimaryBriefIdByRunId = contentRuns.reduce<Record<string, string | null>>((acc, run, index) => {
     const nextNewerRun = index > 0 ? contentRuns[index - 1] : null;
     const windowStartMs = parseTimestamp(run.started_at ?? run.created_at);
@@ -133,7 +175,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         return bTimestamp - aTimestamp;
       });
 
-    const preferredBrief = runBriefs.find((brief) => briefIdsWithArticles.has(brief.id)) ?? runBriefs[0] ?? null;
+    let preferredBrief: ContentBriefResponse | null =
+      runBriefs.find((brief) => briefIdsWithArticles.has(brief.id)) ?? runBriefs[0] ?? null;
+    if (!preferredBrief && hasCompletedArticleGenerationStep(run.step_executions ?? [])) {
+      if (run.source_topic_id) {
+        preferredBrief =
+          briefsWithArticlesByTopicId.get(run.source_topic_id)?.[0] ??
+          briefsByTopicId.get(run.source_topic_id)?.[0] ??
+          null;
+      }
+
+      if (!preferredBrief) {
+        preferredBrief = briefsWithArticlesSortedNewestFirst[0] ?? null;
+      }
+    }
+
     acc[run.id] = preferredBrief?.id ?? null;
     return acc;
   }, {});
@@ -220,7 +276,26 @@ export default function ProjectCreationHubRoute() {
     return runProgressById[run.id]?.status ?? run.status;
   }
 
+  function getRunStepExecutions(run: PipelineRunResponse) {
+    if (run.id === latestRun?.id && liveProgress?.steps) {
+      return liveProgress.steps as StepExecutionResponse[];
+    }
+    const liveRunProgress = runProgressById[run.id];
+    if (liveRunProgress?.steps) {
+      return liveRunProgress.steps as StepExecutionResponse[];
+    }
+    return (run.step_executions ?? []) as StepExecutionResponse[];
+  }
+
+  function hasRunCompletedArticleGeneration(run: PipelineRunResponse) {
+    return hasCompletedArticleGenerationStep(getRunStepExecutions(run));
+  }
+
   function getRunProgress(run: PipelineRunResponse) {
+    if (hasRunCompletedArticleGeneration(run)) {
+      return 100;
+    }
+
     if (run.id === latestRun?.id && liveProgress) {
       return liveProgress.overall_progress ?? 0;
     }
@@ -426,14 +501,21 @@ export default function ProjectCreationHubRoute() {
                 const runProgressLabel = Math.round(runProgress);
                 const runIsInProgress = runProgress > 0 && runProgress < 100;
                 const runStatusLower = (runStatus ?? "").toLowerCase();
+                const runCompletedViaArticleGeneration = hasRunCompletedArticleGeneration(run);
                 const runIsCompleted =
-                  runProgress >= 100 || runStatusLower === "completed" || runStatusLower === "success" || runStatusLower === "done";
+                  runCompletedViaArticleGeneration ||
+                  runProgress >= 100 ||
+                  runStatusLower === "completed" ||
+                  runStatusLower === "success" ||
+                  runStatusLower === "done";
                 const runPrimaryBriefId = runPrimaryBriefIdByRunId[run.id];
-                const runActionHref =
-                  runIsCompleted && runPrimaryBriefId
+                const showArticleCta = runIsCompleted && (Boolean(runPrimaryBriefId) || runCompletedViaArticleGeneration);
+                const runActionHref = showArticleCta
+                  ? runPrimaryBriefId
                     ? `/projects/${project.id}/creation/runs/${run.id}/briefs/${runPrimaryBriefId}`
-                    : `/projects/${project.id}/creation/runs/${run.id}`;
-                const runActionLabel = runIsCompleted && runPrimaryBriefId ? "View article" : "View progress";
+                    : `/projects/${project.id}/creation/runs/${run.id}`
+                  : `/projects/${project.id}/creation/runs/${run.id}`;
+                const runActionLabel = showArticleCta ? "View article" : "View progress";
                 const articleName = getArticleName(run);
 
                 return (

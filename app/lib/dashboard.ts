@@ -3,7 +3,6 @@ import type { components } from "~/types/api.generated";
 import type { DashboardTab, SetupPreset, StepArtifactContext } from "~/types/dashboard";
 
 type StepExecutionResponse = components["schemas"]["StepExecutionResponse"];
-type ProjectGoals = components["schemas"]["ProjectGoals"];
 type ProjectConstraints = components["schemas"]["ProjectConstraints"];
 
 const SUCCESS_STATUSES = new Set(["completed", "success", "succeeded", "done"]);
@@ -183,33 +182,6 @@ export function suggestProjectNameFromDomain(domain: string) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
-}
-
-export function buildPresetGoals(preset: SetupPreset): ProjectGoals {
-  if (preset === "lead_generation") {
-    return {
-      primary_objective: "lead_generation",
-      secondary_goals: ["qualified_leads", "demo_requests"],
-      priority_topics: ["solution comparisons", "buyer guides"],
-      excluded_topics: ["broad awareness"],
-    };
-  }
-
-  if (preset === "revenue_content") {
-    return {
-      primary_objective: "revenue_content",
-      secondary_goals: ["high_intent_sessions", "product_page_assists"],
-      priority_topics: ["alternatives", "pricing context", "use case pages"],
-      excluded_topics: ["general definitions"],
-    };
-  }
-
-  return {
-    primary_objective: "traffic_growth",
-    secondary_goals: ["brand_visibility", "topical_authority"],
-    priority_topics: ["foundational education", "how-to content"],
-    excluded_topics: ["off-topic trends"],
-  };
 }
 
 export function formatStepName(value: string | null | undefined) {

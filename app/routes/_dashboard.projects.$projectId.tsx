@@ -251,6 +251,10 @@ export default function ProjectDetailsRoute() {
               <p className="text-xs font-semibold uppercase text-slate-500">Content runs</p>
               <p className="font-display text-2xl font-bold text-slate-900">{contentRuns}</p>
             </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase text-slate-500">Posts per week</p>
+              <p className="font-display text-2xl font-bold text-slate-900">{project.posts_per_week}</p>
+            </div>
           </CardContent>
         </Card>
 

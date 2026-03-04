@@ -45,7 +45,7 @@ type ProjectListResponse = components["schemas"]["ProjectListResponse"];
 type ProjectResponse = components["schemas"]["ProjectResponse"];
 
 type PlanName = "starter" | "growth" | "agency";
-type ProjectSummary = Pick<ProjectResponse, "id" | "name" | "domain" | "status">;
+type ProjectSummary = Pick<ProjectResponse, "id" | "name" | "domain" | "status" | "posts_per_week">;
 
 type Entitlements = {
   hasProPlan: boolean;
@@ -168,6 +168,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         name: project.name,
         domain: project.domain,
         status: project.status,
+        posts_per_week: typeof project.posts_per_week === "number" ? project.posts_per_week : 1,
       }));
     }
 
@@ -536,7 +537,7 @@ function DashboardLayoutInner({
               {activeProject?.name ?? "No project"}
             </p>
             <p className="truncate text-[11px] text-slate-400">
-              {activeProject?.domain ?? "Create a project"}
+              {activeProject ? `${activeProject.domain} · ${activeProject.posts_per_week} posts/week` : "Create a project"}
             </p>
           </div>
         </Link>
@@ -813,7 +814,9 @@ function DashboardLayoutInner({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-slate-900">{project.name}</p>
-                      <p className="truncate text-xs text-slate-500">{project.domain}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {project.domain} · {project.posts_per_week} posts/week
+                      </p>
                     </div>
                     {isActiveProject ? <Badge variant="info">Active</Badge> : null}
                   </div>
