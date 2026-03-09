@@ -739,8 +739,14 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (!signedUploadResponse.ok) {
       const apiMessage = await readApiErrorMessage(signedUploadResponse);
+      console.error("Brand asset upload preparation failed:", {
+        status: signedUploadResponse.status,
+        projectId,
+        contentType,
+        error: apiMessage,
+      });
       return data(
-        { error: apiMessage ?? "Unable to mint a signed upload URL." } satisfies BrandAssetUploadActionResponse,
+        { error: apiMessage ?? `Unable to mint a signed upload URL (${signedUploadResponse.status}).` } satisfies BrandAssetUploadActionResponse,
         { status: signedUploadResponse.status, headers: await api.commit() }
       );
     }
@@ -838,11 +844,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "createBrandAssetMetadata") {
     const projectId = String(formData.get("project_id") ?? "").trim();
+    const assetId = String(formData.get("asset_id") ?? "").trim();
     const objectKey = String(formData.get("object_key") ?? "").trim();
-    const mimeType = String(formData.get("mime_type") ?? "").trim();
+    const contentType = String(formData.get("content_type") ?? "").trim();
+    const byteSize = String(formData.get("byte_size") ?? "").trim();
+    const sha256 = String(formData.get("sha256") ?? "").trim();
     const role = String(formData.get("role") ?? "").trim();
 
-    if (!projectId || !objectKey || !mimeType || !role) {
+    if (!projectId || !assetId || !objectKey || !contentType || !byteSize || !sha256 || !role) {
       return data(
         { error: "Missing asset metadata context." } satisfies BrandAssetUploadActionResponse,
         { status: 400, headers: await api.commit() }
@@ -852,8 +861,11 @@ export async function action({ request }: Route.ActionArgs) {
     const createAssetResponse = await api.fetch(`/brand/${projectId}/assets`, {
       method: "POST",
       json: {
+        asset_id: assetId,
         object_key: objectKey,
-        mime_type: mimeType,
+        content_type: contentType,
+        byte_size: parseInt(byteSize, 10),
+        sha256,
         role,
       },
     });
@@ -1360,18 +1372,45 @@ export default function ProjectSetupRoute() {
     return payload;
   }
 
+  async function calculateFileSha256(file: File): Promise<string> {
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function generateAssetId(): string {
+    // Generate a simple unique ID (you might want to use a ULID library instead)
+    return `asset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  }
+
   async function handleBrandAssetUpload(file: File, role: string) {
     if (!projectId) {
       setBrandAssetUploadStatus({ state: "error", message: "Project context is missing. Please refresh and try again." });
       return;
     }
 
+    setBrandAssetUploadStatus({ state: "preparing", message: "Calculating file hash..." });
+
+    // Calculate SHA-256 hash and get file size
+    let sha256: string;
+    try {
+      sha256 = await calculateFileSha256(file);
+    } catch (error) {
+      setBrandAssetUploadStatus({ state: "error", message: "Failed to process file." });
+      return;
+    }
+
+    const assetId = generateAssetId();
+    const byteSize = file.size;
+    const contentType = file.type || "application/octet-stream";
+
     setBrandAssetUploadStatus({ state: "preparing", message: "Requesting secure upload URL..." });
 
     const formPayload = new FormData();
     formPayload.set("intent", "prepareBrandAssetUpload");
     formPayload.set("project_id", projectId);
-    formPayload.set("content_type", file.type || "application/octet-stream");
+    formPayload.set("content_type", contentType);
 
     let uploadPreparation: BrandAssetSignedUploadResponse;
     try {
@@ -1408,8 +1447,11 @@ export default function ProjectSetupRoute() {
       const metadataPayload = new FormData();
       metadataPayload.set("intent", "createBrandAssetMetadata");
       metadataPayload.set("project_id", projectId);
+      metadataPayload.set("asset_id", assetId);
       metadataPayload.set("object_key", uploadPreparation.object_key);
-      metadataPayload.set("mime_type", file.type);
+      metadataPayload.set("content_type", contentType);
+      metadataPayload.set("byte_size", byteSize.toString());
+      metadataPayload.set("sha256", sha256);
       metadataPayload.set("role", role);
 
       brandAssetMetadataFetcher.submit(metadataPayload, { method: "post" });
@@ -1427,8 +1469,11 @@ export default function ProjectSetupRoute() {
         const metadataPayload = new FormData();
         metadataPayload.set("intent", "createBrandAssetMetadata");
         metadataPayload.set("project_id", projectId);
+        metadataPayload.set("asset_id", assetId);
         metadataPayload.set("object_key", proxyResult?.object_key ?? uploadPreparation.object_key);
-        metadataPayload.set("mime_type", proxyResult?.mime_type ?? file.type);
+        metadataPayload.set("content_type", contentType);
+        metadataPayload.set("byte_size", byteSize.toString());
+        metadataPayload.set("sha256", sha256);
         metadataPayload.set("role", role);
 
         brandAssetMetadataFetcher.submit(metadataPayload, { method: "post" });
