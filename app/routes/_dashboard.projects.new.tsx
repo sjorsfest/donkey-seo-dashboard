@@ -836,6 +836,44 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
+  if (intent === "createBrandAssetMetadata") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    const objectKey = String(formData.get("object_key") ?? "").trim();
+    const mimeType = String(formData.get("mime_type") ?? "").trim();
+    const role = String(formData.get("role") ?? "").trim();
+
+    if (!projectId || !objectKey || !mimeType || !role) {
+      return data(
+        { error: "Missing asset metadata context." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const createAssetResponse = await api.fetch(`/brand/${projectId}/assets`, {
+      method: "POST",
+      json: {
+        object_key: objectKey,
+        mime_type: mimeType,
+        role,
+      },
+    });
+
+    if (createAssetResponse.status === 401) return handleUnauthorized(api);
+
+    if (!createAssetResponse.ok) {
+      const apiMessage = await readApiErrorMessage(createAssetResponse);
+      return data(
+        { error: apiMessage ?? "Failed to save asset metadata." } satisfies BrandAssetUploadActionResponse,
+        { status: createAssetResponse.status, headers: await api.commit() }
+      );
+    }
+
+    return data(
+      { uploaded: true } satisfies BrandAssetUploadActionResponse,
+      { headers: await api.commit() }
+    );
+  }
+
   return data({ error: "Unsupported action." } satisfies ActionData, {
     status: 400,
     headers: await api.commit(),
@@ -851,6 +889,7 @@ export default function ProjectSetupRoute() {
   const brandFetcher = useFetcher<BrandVisualContextLoaderData>();
   const authorImagePreparationFetcher = useFetcher<AuthorImageUploadActionResponse>();
   const brandAssetPreparationFetcher = useFetcher<BrandAssetUploadActionResponse>();
+  const brandAssetMetadataFetcher = useFetcher<BrandAssetUploadActionResponse>();
 
   const [domain, setDomain] = useState(prefill.domain);
   const [name, setName] = useState(prefill.name);
@@ -1365,24 +1404,15 @@ export default function ProjectSetupRoute() {
         throw new Error(`Asset upload failed (${uploadResponse.status}).`);
       }
 
-      // Create the asset metadata in the backend
-      const createAssetResponse = await fetch(`/api/brand/${projectId}/assets`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        credentials: "same-origin",
-        body: JSON.stringify({
-          object_key: uploadPreparation.object_key,
-          mime_type: file.type,
-          role,
-        }),
-      });
+      // Create the asset metadata using React Router fetcher
+      const metadataPayload = new FormData();
+      metadataPayload.set("intent", "createBrandAssetMetadata");
+      metadataPayload.set("project_id", projectId);
+      metadataPayload.set("object_key", uploadPreparation.object_key);
+      metadataPayload.set("mime_type", file.type);
+      metadataPayload.set("role", role);
 
-      if (!createAssetResponse.ok) {
-        throw new Error("Failed to save asset metadata.");
-      }
-
+      brandAssetMetadataFetcher.submit(metadataPayload, { method: "post" });
       setBrandAssetUploadStatus({ state: "uploaded", message: "Asset uploaded successfully!" });
 
       // Refresh brand data to show the new asset
@@ -1393,24 +1423,15 @@ export default function ProjectSetupRoute() {
       try {
         const proxyResult = await proxyBrandAssetUpload(uploadPreparation, file);
 
-        // Create the asset metadata in the backend
-        const createAssetResponse = await fetch(`/api/brand/${projectId}/assets`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "same-origin",
-          body: JSON.stringify({
-            object_key: proxyResult?.object_key ?? uploadPreparation.object_key,
-            mime_type: proxyResult?.mime_type ?? file.type,
-            role,
-          }),
-        });
+        // Create the asset metadata using React Router fetcher
+        const metadataPayload = new FormData();
+        metadataPayload.set("intent", "createBrandAssetMetadata");
+        metadataPayload.set("project_id", projectId);
+        metadataPayload.set("object_key", proxyResult?.object_key ?? uploadPreparation.object_key);
+        metadataPayload.set("mime_type", proxyResult?.mime_type ?? file.type);
+        metadataPayload.set("role", role);
 
-        if (!createAssetResponse.ok) {
-          throw new Error("Failed to save asset metadata.");
-        }
-
+        brandAssetMetadataFetcher.submit(metadataPayload, { method: "post" });
         setBrandAssetUploadStatus({ state: "uploaded", message: "Asset uploaded successfully!" });
 
         // Refresh brand data to show the new asset
@@ -1677,6 +1698,11 @@ export default function ProjectSetupRoute() {
           }
           onExpandedAssetChange={setExpandedAsset}
           onAssetUpload={handleBrandAssetUpload}
+          isUploadingAsset={
+            brandAssetUploadStatus.state === "preparing" ||
+            brandAssetUploadStatus.state === "uploading" ||
+            brandAssetMetadataFetcher.state === "submitting"
+          }
           showSetupOverlay={onboarding.isPhase("setup_progress") && !setupDismissed}
           onDismissSetupOverlay={() => setSetupDismissed(true)}
         />
