@@ -994,10 +994,70 @@ export interface paths {
         put?: never;
         /**
          * Ingest brand assets from URLs
-         * @description Ingest manually supplied asset URLs into private storage.
+         * @description Legacy URL ingestion endpoint (disabled in favor of client-side uploads).
          */
         post: operations["ingest_brand_assets_api_v1_brand__project_id__assets_ingest_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brand/{project_id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attach an uploaded brand asset
+         * @description Attach metadata for a client-uploaded brand asset object.
+         */
+        post: operations["add_brand_asset_api_v1_brand__project_id__assets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brand/{project_id}/assets/signed-upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get signed upload URL for a brand asset
+         * @description Mint a short-lived signed PUT URL so clients can upload a brand asset directly.
+         */
+        post: operations["get_brand_asset_signed_upload_url_api_v1_brand__project_id__assets_signed_upload_url_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/brand/{project_id}/assets/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a brand asset
+         * @description Remove a brand asset from metadata and private storage.
+         */
+        delete: operations["remove_brand_asset_api_v1_brand__project_id__assets__asset_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1375,6 +1435,40 @@ export interface components {
             usage_percent: number;
         };
         /**
+         * BrandAssetAddRequest
+         * @description Metadata attach request after direct client upload.
+         */
+        BrandAssetAddRequest: {
+            /** Asset Id */
+            asset_id: string;
+            /** Object Key */
+            object_key: string;
+            /** Content Type */
+            content_type: string;
+            /** Byte Size */
+            byte_size: number;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /** Dominant Colors */
+            dominant_colors?: string[];
+            /** Average Luminance */
+            average_luminance?: number | null;
+            /**
+             * Role
+             * @default reference
+             */
+            role: string;
+            /**
+             * Role Confidence
+             * @default 1
+             */
+            role_confidence: number;
+        };
+        /**
          * BrandAssetIngestRequest
          * @description Manual URL-based asset ingestion request.
          */
@@ -1434,6 +1528,18 @@ export interface components {
             ingested_at: string;
         };
         /**
+         * BrandAssetRemoveResponse
+         * @description Manual remove response payload.
+         */
+        BrandAssetRemoveResponse: {
+            /** Removed Asset Id */
+            removed_asset_id: string;
+            /** Total Assets */
+            total_assets: number;
+            /** Brand Assets */
+            brand_assets: components["schemas"]["BrandAssetMetadata"][];
+        };
+        /**
          * BrandAssetSignedReadUrlResponse
          * @description Signed private object read URL response.
          */
@@ -1446,6 +1552,37 @@ export interface components {
             expires_in_seconds: number;
             /** Signed Url */
             signed_url: string;
+        };
+        /**
+         * BrandAssetSignedUploadRequest
+         * @description Request payload to mint a signed brand-asset upload URL.
+         */
+        BrandAssetSignedUploadRequest: {
+            /** Content Type */
+            content_type: string;
+        };
+        /**
+         * BrandAssetSignedUploadResponse
+         * @description Signed upload URL details for direct brand asset uploads.
+         */
+        BrandAssetSignedUploadResponse: {
+            /** Asset Id */
+            asset_id: string;
+            /** Object Key */
+            object_key: string;
+            /**
+             * Upload Method
+             * @default PUT
+             */
+            upload_method: string;
+            /** Upload Url */
+            upload_url: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Required Headers */
+            required_headers?: {
+                [key: string]: string;
+            };
         };
         /**
          * BrandProductServiceMetadata
@@ -1998,7 +2135,7 @@ export interface components {
              * Calendar State
              * @enum {string}
              */
-            calendar_state: "brief_ready" | "writer_instructions_ready" | "article_ready" | "publish_pending" | "published";
+            calendar_state: "brief_ready" | "writer_instructions_ready" | "article_ready" | "publish_pending" | "publication_sent" | "published";
         };
         /**
          * ContentCalendarResponse
@@ -2045,7 +2182,7 @@ export interface components {
             /**
              * Min Lead Days
              * @description Minimum days from today before the first proposed publish date.
-             * @default 3
+             * @default 1
              */
             min_lead_days: number;
             /**
@@ -2631,7 +2768,7 @@ export interface components {
          * @example {
          *       "content": {
          *         "max_briefs": 20,
-         *         "min_lead_days": 3,
+         *         "min_lead_days": 1,
          *         "posts_per_week": 3,
          *         "preferred_weekdays": [
          *           0,
@@ -5436,6 +5573,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrandAssetIngestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_brand_asset_api_v1_brand__project_id__assets_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandAssetAddRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandAssetIngestResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_brand_asset_signed_upload_url_api_v1_brand__project_id__assets_signed_upload_url_post: {
+        parameters: {
+            query?: {
+                ttl_seconds?: number | null;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandAssetSignedUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandAssetSignedUploadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_brand_asset_api_v1_brand__project_id__assets__asset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandAssetRemoveResponse"];
                 };
             };
             /** @description Validation Error */

@@ -99,6 +99,21 @@ type AuthorImageUploadActionResponse = {
   profile_image_mime_type?: string;
 };
 
+type BrandAssetSignedUploadResponse = {
+  upload_url: string;
+  upload_method: string;
+  object_key: string;
+  required_headers: Record<string, string>;
+};
+
+type BrandAssetUploadActionResponse = {
+  error?: string;
+  upload?: BrandAssetSignedUploadResponse;
+  uploaded?: boolean;
+  object_key?: string;
+  mime_type?: string;
+};
+
 type PreparedAuthorImageUpload = AuthorImageUploadActionResponse & {
   author_id: string;
   upload: AuthorProfileImageSignedUploadResponse;
@@ -693,6 +708,134 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
+  if (intent === "prepareBrandAssetUpload") {
+    const projectId = String(formData.get("project_id") ?? "").trim();
+    const contentType = String(formData.get("content_type") ?? "").trim();
+
+    if (!projectId || !contentType) {
+      return data(
+        { error: "Missing asset upload context." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    if (!contentType.toLowerCase().startsWith("image/")) {
+      return data(
+        { error: "Brand asset must be a valid image MIME type." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const signedUploadPayload = { content_type: contentType };
+    const signedUploadResponse = await api.fetch(
+      `/brand/${projectId}/assets/signed-upload-url`,
+      {
+        method: "POST",
+        json: signedUploadPayload,
+      }
+    );
+
+    if (signedUploadResponse.status === 401) return handleUnauthorized(api);
+
+    if (!signedUploadResponse.ok) {
+      const apiMessage = await readApiErrorMessage(signedUploadResponse);
+      return data(
+        { error: apiMessage ?? "Unable to mint a signed upload URL." } satisfies BrandAssetUploadActionResponse,
+        { status: signedUploadResponse.status, headers: await api.commit() }
+      );
+    }
+
+    const upload = (await signedUploadResponse.json()) as BrandAssetSignedUploadResponse;
+    return data(
+      { upload } satisfies BrandAssetUploadActionResponse,
+      { headers: await api.commit() }
+    );
+  }
+
+  if (intent === "proxyBrandAssetUpload") {
+    const uploadJson = String(formData.get("upload_json") ?? "").trim();
+    const uploadedFile = formData.get("file");
+
+    if (!uploadJson || !(uploadedFile instanceof File)) {
+      return data(
+        { error: "Missing asset upload context." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const contentType = (uploadedFile.type || "").trim();
+    if (!contentType.toLowerCase().startsWith("image/")) {
+      return data(
+        { error: "Brand asset must be a valid image MIME type." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    let parsedUploadValue: unknown;
+    try {
+      parsedUploadValue = JSON.parse(uploadJson);
+    } catch {
+      return data(
+        { error: "Invalid signed upload payload." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    if (!parsedUploadValue || typeof parsedUploadValue !== "object") {
+      return data(
+        { error: "Invalid signed upload payload." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const uploadRecord = parsedUploadValue as Record<string, unknown>;
+    const uploadUrl = normalizeOptionalString(uploadRecord.upload_url);
+    const uploadMethod = normalizeOptionalString(uploadRecord.upload_method) ?? "PUT";
+    const objectKey = normalizeOptionalString(uploadRecord.object_key);
+    const requiredHeadersValue =
+      typeof uploadRecord.required_headers === "object" && uploadRecord.required_headers !== null
+        ? (uploadRecord.required_headers as Record<string, unknown>)
+        : {};
+
+    if (!uploadUrl || !objectKey) {
+      return data(
+        { error: "Invalid signed upload payload." } satisfies BrandAssetUploadActionResponse,
+        { status: 400, headers: await api.commit() }
+      );
+    }
+
+    const uploadHeaders = new Headers();
+    for (const [key, value] of Object.entries(requiredHeadersValue)) {
+      if (typeof value === "string") uploadHeaders.set(key, value);
+    }
+    if (!uploadHeaders.has("Content-Type")) {
+      uploadHeaders.set("Content-Type", contentType);
+    }
+
+    const binaryBody = new Uint8Array(await uploadedFile.arrayBuffer());
+    const uploadResponse = await fetch(uploadUrl, {
+      method: uploadMethod,
+      headers: uploadHeaders,
+      body: binaryBody,
+    });
+
+    if (!uploadResponse.ok) {
+      return data(
+        { error: `Asset upload failed (${uploadResponse.status}).` } satisfies BrandAssetUploadActionResponse,
+        { status: uploadResponse.status, headers: await api.commit() }
+      );
+    }
+
+    return data(
+      {
+        uploaded: true,
+        object_key: objectKey,
+        mime_type: contentType,
+      } satisfies BrandAssetUploadActionResponse,
+      { headers: await api.commit() }
+    );
+  }
+
   return data({ error: "Unsupported action." } satisfies ActionData, {
     status: 400,
     headers: await api.commit(),
@@ -707,6 +850,7 @@ export default function ProjectSetupRoute() {
   const taskFetcher = useFetcher<TaskStatusLoaderData>();
   const brandFetcher = useFetcher<BrandVisualContextLoaderData>();
   const authorImagePreparationFetcher = useFetcher<AuthorImageUploadActionResponse>();
+  const brandAssetPreparationFetcher = useFetcher<BrandAssetUploadActionResponse>();
 
   const [domain, setDomain] = useState(prefill.domain);
   const [name, setName] = useState(prefill.name);
@@ -727,6 +871,12 @@ export default function ProjectSetupRoute() {
   const [authorImageUploadStatuses, setAuthorImageUploadStatuses] = useState<Record<string, AuthorImageUploadStatus>>({});
   const pendingAuthorImagePreparationRef = useRef<{
     resolve: (response: PreparedAuthorImageUpload) => void;
+    reject: (reason: Error) => void;
+  } | null>(null);
+
+  const [brandAssetUploadStatus, setBrandAssetUploadStatus] = useState<{ state: "idle" | "preparing" | "uploading" | "uploaded" | "error"; message?: string }>({ state: "idle" });
+  const pendingBrandAssetPreparationRef = useRef<{
+    resolve: (response: BrandAssetSignedUploadResponse) => void;
     reject: (reason: Error) => void;
   } | null>(null);
 
@@ -869,12 +1019,39 @@ export default function ProjectSetupRoute() {
   }, [authorImagePreparationFetcher.data, authorImagePreparationFetcher.state]);
 
   useEffect(() => {
+    if (brandAssetPreparationFetcher.state !== "idle") return;
+
+    const pendingPreparation = pendingBrandAssetPreparationRef.current;
+    if (!pendingPreparation) return;
+
+    pendingBrandAssetPreparationRef.current = null;
+    const payload = brandAssetPreparationFetcher.data;
+
+    if (!payload || !payload.upload) {
+      pendingPreparation.reject(new Error(payload?.error ?? "Unable to prepare asset upload."));
+      return;
+    }
+
+    pendingPreparation.resolve(payload.upload);
+  }, [brandAssetPreparationFetcher.data, brandAssetPreparationFetcher.state]);
+
+  useEffect(() => {
     return () => {
       const pendingPreparation = pendingAuthorImagePreparationRef.current;
       if (!pendingPreparation) return;
 
       pendingAuthorImagePreparationRef.current = null;
       pendingPreparation.reject(new Error("Image upload preparation was interrupted."));
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      const pendingPreparation = pendingBrandAssetPreparationRef.current;
+      if (!pendingPreparation) return;
+
+      pendingBrandAssetPreparationRef.current = null;
+      pendingPreparation.reject(new Error("Asset upload preparation was interrupted."));
     };
   }, []);
 
@@ -1093,6 +1270,156 @@ export default function ProjectSetupRoute() {
       ...previous,
       [authorId]: { state: "uploaded", message: "Image uploaded successfully." },
     }));
+  }
+
+  function prepareBrandAssetUpload(formPayload: FormData): Promise<BrandAssetSignedUploadResponse> {
+    if (pendingBrandAssetPreparationRef.current) {
+      return Promise.reject(new Error("Another asset upload is already being prepared."));
+    }
+
+    return new Promise((resolve, reject) => {
+      pendingBrandAssetPreparationRef.current = { resolve, reject };
+      try {
+        brandAssetPreparationFetcher.submit(formPayload, {
+          method: "post",
+          encType: "multipart/form-data",
+        });
+      } catch (error) {
+        pendingBrandAssetPreparationRef.current = null;
+        reject(error instanceof Error ? error : new Error("Unable to prepare asset upload."));
+      }
+    });
+  }
+
+  async function proxyBrandAssetUpload(
+    upload: BrandAssetSignedUploadResponse,
+    file: File
+  ) {
+    const formPayload = new FormData();
+    formPayload.set("intent", "proxyBrandAssetUpload");
+    formPayload.set("upload_json", JSON.stringify(upload));
+    formPayload.set("file", file);
+
+    const actionUrl = `${window.location.pathname}${window.location.search}`;
+    const response = await fetch(actionUrl, {
+      method: "POST",
+      body: formPayload,
+      credentials: "same-origin",
+    });
+
+    let payload: BrandAssetUploadActionResponse | null = null;
+    try {
+      payload = (await response.json()) as BrandAssetUploadActionResponse;
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok || payload?.error) {
+      throw new Error(payload?.error ?? `Asset upload failed (${response.status}).`);
+    }
+
+    return payload;
+  }
+
+  async function handleBrandAssetUpload(file: File, role: string) {
+    if (!projectId) {
+      setBrandAssetUploadStatus({ state: "error", message: "Project context is missing. Please refresh and try again." });
+      return;
+    }
+
+    setBrandAssetUploadStatus({ state: "preparing", message: "Requesting secure upload URL..." });
+
+    const formPayload = new FormData();
+    formPayload.set("intent", "prepareBrandAssetUpload");
+    formPayload.set("project_id", projectId);
+    formPayload.set("content_type", file.type || "application/octet-stream");
+
+    let uploadPreparation: BrandAssetSignedUploadResponse;
+    try {
+      uploadPreparation = await prepareBrandAssetUpload(formPayload);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to prepare asset upload.";
+      setBrandAssetUploadStatus({ state: "error", message });
+      return;
+    }
+
+    setBrandAssetUploadStatus({ state: "uploading", message: "Uploading asset..." });
+
+    try {
+      const uploadHeaders = new Headers();
+      const requiredHeaders = uploadPreparation.required_headers ?? {};
+      for (const [key, value] of Object.entries(requiredHeaders)) {
+        uploadHeaders.set(key, value);
+      }
+      if (file.type && !uploadHeaders.has("Content-Type")) {
+        uploadHeaders.set("Content-Type", file.type);
+      }
+
+      const uploadResponse = await fetch(uploadPreparation.upload_url, {
+        method: uploadPreparation.upload_method || "PUT",
+        headers: uploadHeaders,
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Asset upload failed (${uploadResponse.status}).`);
+      }
+
+      // Create the asset metadata in the backend
+      const createAssetResponse = await fetch(`/api/brand/${projectId}/assets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          object_key: uploadPreparation.object_key,
+          mime_type: file.type,
+          role,
+        }),
+      });
+
+      if (!createAssetResponse.ok) {
+        throw new Error("Failed to save asset metadata.");
+      }
+
+      setBrandAssetUploadStatus({ state: "uploaded", message: "Asset uploaded successfully!" });
+
+      // Refresh brand data to show the new asset
+      brandFetcher.load(`/projects/${projectId}/brand-visual-context?ts=${Date.now()}`);
+    } catch (error) {
+      setBrandAssetUploadStatus({ state: "uploading", message: "Direct upload failed, retrying through server relay..." });
+
+      try {
+        const proxyResult = await proxyBrandAssetUpload(uploadPreparation, file);
+
+        // Create the asset metadata in the backend
+        const createAssetResponse = await fetch(`/api/brand/${projectId}/assets`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            object_key: proxyResult?.object_key ?? uploadPreparation.object_key,
+            mime_type: proxyResult?.mime_type ?? file.type,
+            role,
+          }),
+        });
+
+        if (!createAssetResponse.ok) {
+          throw new Error("Failed to save asset metadata.");
+        }
+
+        setBrandAssetUploadStatus({ state: "uploaded", message: "Asset uploaded successfully!" });
+
+        // Refresh brand data to show the new asset
+        brandFetcher.load(`/projects/${projectId}/brand-visual-context?ts=${Date.now()}`);
+      } catch (relayError) {
+        const message = relayError instanceof Error ? relayError.message : "Asset upload failed.";
+        setBrandAssetUploadStatus({ state: "error", message });
+      }
+    }
   }
 
   async function handleAuthorImageFileChange(authorId: string, files: FileList | null) {
@@ -1349,6 +1676,7 @@ export default function ProjectSetupRoute() {
             }))
           }
           onExpandedAssetChange={setExpandedAsset}
+          onAssetUpload={handleBrandAssetUpload}
           showSetupOverlay={onboarding.isPhase("setup_progress") && !setupDismissed}
           onDismissSetupOverlay={() => setSetupDismissed(true)}
         />
