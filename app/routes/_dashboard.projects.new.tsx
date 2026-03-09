@@ -1379,9 +1379,13 @@ export default function ProjectSetupRoute() {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   }
 
-  function generateAssetId(): string {
-    // Generate a simple unique ID (you might want to use a ULID library instead)
-    return `asset_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+  function extractAssetIdFromObjectKey(objectKey: string): string {
+    // Extract asset_id from object_key
+    // Format: projects/{project_id}/brand-assets/uploads/{asset_id}.{extension}
+    const parts = objectKey.split('/');
+    const filename = parts[parts.length - 1]; // e.g., "cmmjekgla0000s9fr44bkals.png"
+    const assetId = filename.split('.')[0]; // Remove extension
+    return assetId;
   }
 
   async function handleBrandAssetUpload(file: File, role: string) {
@@ -1390,22 +1394,10 @@ export default function ProjectSetupRoute() {
       return;
     }
 
-    setBrandAssetUploadStatus({ state: "preparing", message: "Calculating file hash..." });
+    setBrandAssetUploadStatus({ state: "preparing", message: "Requesting secure upload URL..." });
 
-    // Calculate SHA-256 hash and get file size
-    let sha256: string;
-    try {
-      sha256 = await calculateFileSha256(file);
-    } catch (error) {
-      setBrandAssetUploadStatus({ state: "error", message: "Failed to process file." });
-      return;
-    }
-
-    const assetId = generateAssetId();
     const byteSize = file.size;
     const contentType = file.type || "application/octet-stream";
-
-    setBrandAssetUploadStatus({ state: "preparing", message: "Requesting secure upload URL..." });
 
     const formPayload = new FormData();
     formPayload.set("intent", "prepareBrandAssetUpload");
@@ -1418,6 +1410,20 @@ export default function ProjectSetupRoute() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to prepare asset upload.";
       setBrandAssetUploadStatus({ state: "error", message });
+      return;
+    }
+
+    // Extract asset_id from the object_key returned by the backend
+    const assetId = extractAssetIdFromObjectKey(uploadPreparation.object_key);
+
+    setBrandAssetUploadStatus({ state: "uploading", message: "Calculating file hash..." });
+
+    // Calculate SHA-256 hash
+    let sha256: string;
+    try {
+      sha256 = await calculateFileSha256(file);
+    } catch (error) {
+      setBrandAssetUploadStatus({ state: "error", message: "Failed to process file." });
       return;
     }
 
