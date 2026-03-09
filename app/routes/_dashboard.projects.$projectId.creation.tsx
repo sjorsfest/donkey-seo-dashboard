@@ -38,6 +38,7 @@ type LoaderData = {
   briefTotal: number;
   articleTotal: number;
   articlesCompleted: number;
+  publishedBriefIds: Set<string>;
 };
 
 const STEP_SUCCESS_STATUSES = new Set(["completed", "success", "succeeded", "done"]);
@@ -203,6 +204,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return acc;
   }, {});
 
+  // Create a lightweight Set of brief IDs that have published articles
+  const publishedBriefIds = new Set(
+    articles
+      .filter((article) => article.status.toLowerCase() === "published")
+      .map((article) => article.brief_id)
+  );
+
   return data(
     {
       project: projectResult.data,
@@ -215,6 +223,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       briefTotal: briefsResult.ok && briefsResult.data ? briefsResult.data.total : 0,
       articleTotal: articles.length,
       articlesCompleted: countCompletedArticles(articles),
+      publishedBriefIds,
     } satisfies LoaderData,
     {
       headers: await api.commit(),
@@ -234,6 +243,7 @@ export default function ProjectCreationHubRoute() {
     briefTotal,
     articleTotal,
     articlesCompleted,
+    publishedBriefIds,
   } = useLoaderData<typeof loader>() as LoaderData;
   const revalidator = useRevalidator();
 
@@ -311,6 +321,13 @@ export default function ProjectCreationHubRoute() {
     return progress > 0 && progress < 100;
   }
 
+  function hasRunPublishedArticles(run: PipelineRunResponse) {
+    const briefId = runPrimaryBriefIdByRunId[run.id];
+    if (!briefId) return false;
+
+    return publishedBriefIds.has(briefId);
+  }
+
   function getRunStepLabel(run: PipelineRunResponse) {
     if (run.id === latestRun?.id && liveProgress?.current_step_name) {
       return formatStepName(liveProgress.current_step_name);
@@ -351,8 +368,20 @@ export default function ProjectCreationHubRoute() {
     .sort((a, b) => {
       const aIsInProgress = isRunInProgress(a);
       const bIsInProgress = isRunInProgress(b);
-      if (aIsInProgress === bIsInProgress) return 0;
-      return aIsInProgress ? -1 : 1;
+      const aHasPublished = hasRunPublishedArticles(a);
+      const bHasPublished = hasRunPublishedArticles(b);
+
+      // Prioritize in-progress first
+      if (aIsInProgress !== bIsInProgress) {
+        return aIsInProgress ? -1 : 1;
+      }
+
+      // Then prioritize published articles
+      if (aHasPublished !== bHasPublished) {
+        return aHasPublished ? -1 : 1;
+      }
+
+      return 0;
     })
     .slice(0, 8);
 
@@ -492,7 +521,7 @@ export default function ProjectCreationHubRoute() {
           <Card>
             <CardHeader>
               <CardTitle>Drafting processes</CardTitle>
-              <CardDescription>In-progress processes are pinned to the top.</CardDescription>
+              <CardDescription>In-progress and published articles are pinned to the top.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
               {sortedContentRuns.map((run) => {

@@ -91,7 +91,7 @@ function buildSeoData(pathname: string, siteOrigin: string): SeoData {
     };
   }
 
-  if (pathname.startsWith("/projects") || pathname.startsWith("/project") || pathname === "/billing" || pathname === "/settings") {
+  if (pathname.startsWith("/projects") || pathname.startsWith("/project") || pathname === "/billing") {
     return {
       title: `Dashboard | ${SITE_NAME}`,
       description: "Manage SEO projects, keyword discovery, and AI-assisted content workflows in your Donkey SEO dashboard.",

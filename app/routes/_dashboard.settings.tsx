@@ -14,7 +14,6 @@ import { formatDateTime } from "~/lib/dashboard";
 import { cn } from "~/lib/utils";
 import type { components } from "~/types/api.generated";
 
-type ProjectListResponse = components["schemas"]["ProjectListResponse"];
 type ProjectResponse = components["schemas"]["ProjectResponse"];
 type ProjectApiKeyResponse = components["schemas"]["ProjectApiKeyResponse"];
 type ProjectWebhookSecretResponse = components["schemas"]["ProjectWebhookSecretResponse"];
@@ -23,9 +22,8 @@ type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 type ProjectSummary = Pick<ProjectResponse, "id" | "name" | "domain" | "status" | "posts_per_week">;
 
 type LoaderData = {
-  projects: ProjectSummary[];
-  activeProject: ProjectSummary | null;
-  fullProject: ProjectResponse | null;
+  activeProject: ProjectSummary;
+  fullProject: ProjectResponse;
   guideContent: string | null;
   documentationUrl: string;
 };
@@ -40,7 +38,6 @@ type ActionData = {
 
 type SettingsTab = "overview" | "api-keys" | "webhooks" | "ai-guide";
 
-const ACTIVE_PROJECT_SESSION_KEY = "activeProjectId";
 const INTEGRATION_GUIDE_PATH = "/integration/guide/donkey-client.md";
 
 function buildDocumentationUrl(request: Request) {
@@ -53,12 +50,6 @@ function buildDocumentationUrl(request: Request) {
   return `${new URL(request.url).origin}/documentation`;
 }
 
-function normalizeSessionProjectId(value: unknown) {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized.length > 0 ? normalized : null;
-}
-
 function parseOnboardingTab(value: string | null): SettingsTab | null {
   if (value === "overview" || value === "api-keys" || value === "webhooks" || value === "ai-guide") {
     return value;
@@ -66,13 +57,18 @@ function parseOnboardingTab(value: string | null): SettingsTab | null {
   return null;
 }
 
-export async function loader({ request }: { request: Request }) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const projectId = params.projectId;
+  if (!projectId) {
+    throw new Response("Missing project id.", { status: 400 });
+  }
+
   const api = new ApiClient(request);
   await api.requireUser();
   const documentationUrl = buildDocumentationUrl(request);
 
-  const projectsResponse = await api.fetch("/projects/?page=1&page_size=100");
-  if (projectsResponse.status === 401) {
+  const projectResponse = await api.fetch(`/projects/${encodeURIComponent(projectId)}`);
+  if (projectResponse.status === 401) {
     return redirect("/login", {
       headers: {
         "Set-Cookie": await api.logout(),
@@ -80,42 +76,20 @@ export async function loader({ request }: { request: Request }) {
     });
   }
 
-  if (!projectsResponse.ok) {
-    throw new Response("Failed to load projects.", { status: projectsResponse.status });
+  if (!projectResponse.ok) {
+    throw new Response("Failed to load project.", { status: projectResponse.status });
   }
 
-  const projectsPayload = (await projectsResponse.json()) as ProjectListResponse;
-  const projectItems = (projectsPayload.items ?? []) as ProjectResponse[];
-  const projects = projectItems.map((project) => ({
-    id: project.id,
-    name: project.name,
-    domain: project.domain,
-    status: project.status,
-    posts_per_week: typeof project.posts_per_week === "number" ? project.posts_per_week : 1,
-  }));
+  const fullProject = (await projectResponse.json()) as ProjectResponse;
+  const activeProject: ProjectSummary = {
+    id: fullProject.id,
+    name: fullProject.name,
+    domain: fullProject.domain,
+    status: fullProject.status,
+    posts_per_week: typeof fullProject.posts_per_week === "number" ? fullProject.posts_per_week : 1,
+  };
 
-  const sessionProjectId = normalizeSessionProjectId(await api.getSessionValue(ACTIVE_PROJECT_SESSION_KEY));
-  const activeProject =
-    (sessionProjectId ? projects.find((project) => project.id === sessionProjectId) : null) ?? projects[0] ?? null;
-
-  if (activeProject && activeProject.id !== sessionProjectId) {
-    await api.setSessionValue(ACTIVE_PROJECT_SESSION_KEY, activeProject.id);
-  }
-
-  if (!activeProject && sessionProjectId) {
-    await api.unsetSessionValue(ACTIVE_PROJECT_SESSION_KEY);
-  }
-
-  // Fetch full project details for credential status
-  let fullProject: ProjectResponse | null = null;
   let guideContent: string | null = null;
-
-  if (activeProject) {
-    const projectResponse = await api.fetch(`/projects/${encodeURIComponent(activeProject.id)}`);
-    if (projectResponse.ok) {
-      fullProject = (await projectResponse.json()) as ProjectResponse;
-    }
-  }
 
   // Fetch guide content
   const guideResponse = await api.fetch(INTEGRATION_GUIDE_PATH);
@@ -125,7 +99,6 @@ export async function loader({ request }: { request: Request }) {
 
   return data(
     {
-      projects,
       activeProject,
       fullProject,
       guideContent,
@@ -137,16 +110,16 @@ export async function loader({ request }: { request: Request }) {
   );
 }
 
-export async function action({ request }: { request: Request }) {
+export async function action({ request, params }: Route.ActionArgs) {
   const api = new ApiClient(request);
   const formData = await request.formData();
   const intent = String(formData.get("intent") ?? "");
 
-  const projectId = String(formData.get("projectId") ?? "").trim();
+  const projectId = params.projectId?.trim() ?? "";
   if (!projectId) {
     return data(
       {
-        error: "Select a project first.",
+        error: "Missing project id.",
       } satisfies ActionData,
       {
         status: 400,
@@ -349,7 +322,7 @@ export async function action({ request }: { request: Request }) {
 }
 
 export default function DashboardSettingsRoute() {
-  const { projects, activeProject, fullProject, guideContent, documentationUrl } = useLoaderData<typeof loader>() as LoaderData;
+  const { activeProject, fullProject, guideContent, documentationUrl } = useLoaderData<typeof loader>() as LoaderData;
   const actionData = useActionData<typeof action>() as ActionData | undefined;
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
@@ -377,7 +350,7 @@ export default function DashboardSettingsRoute() {
     navigation.state !== "idle" && navigation.formData?.get("intent")?.toString() === "generate_webhook_secret";
   const isSavingWebhook =
     navigation.state !== "idle" && navigation.formData?.get("intent")?.toString() === "save_webhook_url";
-  const hasProjects = projects.length > 0;
+  const hasProjects = Boolean(activeProject);
   const normalizedWebhookUrl = webhookUrl.trim();
   const hasUnsavedWebhookUrlChanges = normalizedWebhookUrl !== savedWebhookUrl;
   const hasWebhook = savedWebhookUrl.length > 0;
@@ -624,7 +597,6 @@ export default function DashboardSettingsRoute() {
 
                     <Form method="post" className="flex flex-wrap items-center gap-3">
                       <input type="hidden" name="intent" value="generate_api_key" />
-                      <input type="hidden" name="projectId" value={activeProject?.id ?? ""} />
                       <Button type="submit" disabled={!activeProject || isGenerating}>
                         {isGenerating ? (
                           <>
@@ -807,7 +779,6 @@ export default function DashboardSettingsRoute() {
                       </div>
                       <Form method="post" className="flex flex-wrap items-center gap-3">
                         <input type="hidden" name="intent" value="generate_webhook_secret" />
-                        <input type="hidden" name="projectId" value={activeProject?.id ?? ""} />
                         <Button type="submit" disabled={!activeProject || isGeneratingWebhook}>
                           {isGeneratingWebhook ? (
                             <>
@@ -890,7 +861,6 @@ export default function DashboardSettingsRoute() {
                       <h3 className="mb-2 text-sm font-semibold text-slate-900">Step 2: Configure Webhook URL</h3>
                       <Form method="post" className="space-y-3">
                         <input type="hidden" name="intent" value="save_webhook_url" />
-                        <input type="hidden" name="projectId" value={activeProject?.id ?? ""} />
                         <div>
                           <label htmlFor="webhookUrl" className="mb-1.5 block text-xs font-medium text-slate-700">
                             Webhook Endpoint URL

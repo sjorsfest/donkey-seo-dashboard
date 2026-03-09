@@ -130,6 +130,7 @@ function getProjectSwitchTarget(pathname: string, projectId: string) {
   if (pathname.includes("/discovery")) return `/projects/${projectId}/discovery`;
   if (pathname.includes("/creation")) return `/projects/${projectId}/creation`;
   if (pathname.includes("/calendar")) return `/projects/${projectId}/calendar`;
+  if (pathname.includes("/settings")) return `/projects/${projectId}/settings`;
   return `/projects/${projectId}`;
 }
 
@@ -285,8 +286,9 @@ const navItems: NavItem[] = [
     label: "Settings",
     icon: Settings2,
     colorClass: "text-cyan-600",
-    path: "/settings",
-    isActive: (pathname) => pathname.startsWith("/settings"),
+    getPath: (context) =>
+      context.activeProjectId ? `/projects/${context.activeProjectId}/settings` : "/project",
+    isActive: (pathname) => pathname.includes("/settings"),
   },
 ];
 
