@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "~/com
 import { Progress } from "~/components/ui/progress";
 import { Skeleton } from "~/components/ui/skeleton";
 import { RouteErrorBoundaryCard } from "~/components/errors/route-error-boundary";
+import { readApiErrorMessage } from "~/lib/api-error";
 import { ApiClient } from "~/lib/api.server";
 import { formatDateTime, formatStatusLabel, getStatusBadgeClass, summarizeSteps } from "~/lib/dashboard";
 import { sortPipelineRunsNewest } from "~/lib/pipeline-module";
@@ -19,7 +20,9 @@ type KeywordListResponse = components["schemas"]["KeywordListResponse"];
 type TopicListResponse = components["schemas"]["TopicListResponse"];
 type TopicResponse = components["schemas"]["TopicResponse"];
 type BrandVisualContextResponse = components["schemas"]["BrandVisualContextResponse"];
+type BrandScrapeRefreshResponse = components["schemas"]["BrandScrapeRefreshResponse"];
 type PipelineProgressResponse = components["schemas"]["PipelineProgressResponse"];
+type BrandData = BrandVisualContextResponse | BrandScrapeRefreshResponse;
 
 type SetupRunSummary = {
   id: string;
@@ -35,10 +38,14 @@ type LoaderData = {
   topicTotal: number;
   rankedTopicCount: number;
   brand: BrandVisualContextResponse | null;
-  brandAssetRoles: Array<{ role: string; count: number }>;
 };
 
-function countBrandAssetRoles(brand: BrandVisualContextResponse | null) {
+type ActionData = {
+  brand?: BrandScrapeRefreshResponse;
+  error?: string;
+};
+
+function countBrandAssetRoles(brand: BrandData | null) {
   if (!brand?.brand_assets || brand.brand_assets.length === 0) return [];
   const counts = new Map<string, number>();
   for (const asset of brand.brand_assets) {
@@ -49,6 +56,22 @@ function countBrandAssetRoles(brand: BrandVisualContextResponse | null) {
   return Array.from(counts.entries())
     .map(([role, count]) => ({ role, count }))
     .sort((a, b) => b.count - a.count);
+}
+
+function readRefreshMetadata(brand: BrandData | null) {
+  if (!brand || !("refreshed_at" in brand)) {
+    return {
+      refreshedAt: null,
+      extractionAttempts: null,
+      extractionWarnings: [] as string[],
+    };
+  }
+
+  return {
+    refreshedAt: brand.refreshed_at ?? null,
+    extractionAttempts: brand.extraction_attempts ?? null,
+    extractionWarnings: brand.extraction_warnings ?? [],
+  };
 }
 
 async function handleUnauthorized(api: ApiClient) {
@@ -111,8 +134,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const latestRun = runs[0] ?? null;
   const latestSetup = runs.find((run) => String(run.pipeline_module ?? "").toLowerCase() === "setup") ?? null;
   const brand = brandResult.ok && brandResult.data ? brandResult.data : null;
-  const brandAssetRoles = countBrandAssetRoles(brand);
-
   return data(
     {
       project: projectResult.data,
@@ -128,7 +149,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       topicTotal: topicsResult.ok && topicsResult.data ? topicsResult.data.total : 0,
       rankedTopicCount: rankedTopicsResult.ok && rankedTopicsResult.data ? rankedTopicsResult.data.length : 0,
       brand,
-      brandAssetRoles,
     } satisfies LoaderData,
     {
       headers: await api.commit(),
@@ -136,23 +156,81 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
 }
 
+export async function action({ request, params }: Route.ActionArgs) {
+  const projectId = params.projectId;
+  if (!projectId) {
+    return data({ error: "Missing project id." } satisfies ActionData, { status: 400 });
+  }
+
+  const api = new ApiClient(request);
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+  if (intent !== "refreshBrandData") {
+    return data({ error: "Unsupported action." } satisfies ActionData, { status: 400 });
+  }
+
+  const maxPagesRaw = Number(formData.get("max_pages") ?? 10);
+  const maxPages = Number.isFinite(maxPagesRaw) && maxPagesRaw > 0 ? maxPagesRaw : 10;
+  const additionalContextRaw = formData.get("additional_context");
+  const additionalContext =
+    typeof additionalContextRaw === "string" && additionalContextRaw.trim().length > 0
+      ? additionalContextRaw.trim()
+      : null;
+  const clearSuggestedIcpNichesRaw = formData.get("clear_suggested_icp_niches");
+  const clearSuggestedIcpNiches =
+    clearSuggestedIcpNichesRaw === null ? true : String(clearSuggestedIcpNichesRaw).toLowerCase() !== "false";
+
+  const response = await api.fetch(`/brand/${projectId}/refresh-scrape`, {
+    method: "POST",
+    json: {
+      max_pages: maxPages,
+      additional_context: additionalContext,
+      clear_suggested_icp_niches: clearSuggestedIcpNiches,
+    },
+  });
+
+  if (response.status === 401) return handleUnauthorized(api);
+  if (!response.ok) {
+    const apiMessage = await readApiErrorMessage(response);
+    return data(
+      { error: apiMessage ?? "Unable to refresh brand data." } satisfies ActionData,
+      { status: response.status, headers: await api.commit() }
+    );
+  }
+
+  const refreshedBrand = (await response.json()) as BrandScrapeRefreshResponse;
+  return data(
+    {
+      brand: refreshedBrand,
+    } satisfies ActionData,
+    {
+      headers: await api.commit(),
+    }
+  );
+}
+
 export default function ProjectDetailsRoute() {
-  const { project, runs, latestRun, latestSetupRun, keywordTotal, topicTotal, rankedTopicCount, brand, brandAssetRoles } =
+  const { project, runs, latestRun, latestSetupRun, keywordTotal, topicTotal, rankedTopicCount, brand } =
     useLoaderData<typeof loader>() as LoaderData;
   const revalidator = useRevalidator();
   const setupProgressFetcher = useFetcher<PipelineProgressResponse>();
+  const refreshBrandFetcher = useFetcher<ActionData>();
   const [didRevalidateAfterSetup, setDidRevalidateAfterSetup] = useState(false);
+  const [brandData, setBrandData] = useState<BrandData | null>(brand);
 
   const latestStepSummary = latestRun ? summarizeSteps(latestRun.step_executions ?? []) : null;
   const discoveryRuns = runs.filter((run) => String(run.pipeline_module ?? "").toLowerCase() === "discovery").length;
   const contentRuns = runs.filter((run) => String(run.pipeline_module ?? "").toLowerCase() === "content").length;
   const setupRuns = runs.filter((run) => String(run.pipeline_module ?? "").toLowerCase() === "setup").length;
   const setupStatus = String(setupProgressFetcher.data?.status ?? latestSetupRun?.status ?? "").toLowerCase();
-  const isSetupActive = !brand && Boolean(latestSetupRun && isActiveStatus(setupStatus));
+  const isSetupActive = !brandData && Boolean(latestSetupRun && isActiveStatus(setupStatus));
   const setupProgress = Math.max(0, Math.min(100, Math.round(setupProgressFetcher.data?.overall_progress ?? 0)));
   const setupStepName = setupProgressFetcher.data?.current_step_name ?? null;
   const setupStatusRef = useRef(setupStatus);
   const fetcherStateRef = useRef(setupProgressFetcher.state);
+  const brandAssetRoles = countBrandAssetRoles(brandData);
+  const refreshMetadata = readRefreshMetadata(brandData);
+  const isRefreshingBrand = refreshBrandFetcher.state !== "idle";
 
   useEffect(() => {
     setupStatusRef.current = setupStatus;
@@ -163,7 +241,7 @@ export default function ProjectDetailsRoute() {
   }, [setupProgressFetcher.state]);
 
   useEffect(() => {
-    if (!latestSetupRun || brand) return;
+    if (!latestSetupRun || brandData) return;
     let intervalId: number | null = null;
 
     const poll = () => {
@@ -187,15 +265,25 @@ export default function ProjectDetailsRoute() {
         window.clearInterval(intervalId);
       }
     };
-  }, [brand, latestSetupRun?.id, project.id]);
+  }, [brandData, latestSetupRun?.id, project.id]);
 
   useEffect(() => {
-    if (brand || !latestSetupRun || didRevalidateAfterSetup) return;
+    if (brandData || !latestSetupRun || didRevalidateAfterSetup) return;
     if (setupStatus !== "completed" || revalidator.state !== "idle") return;
 
     setDidRevalidateAfterSetup(true);
     revalidator.revalidate();
-  }, [brand, didRevalidateAfterSetup, latestSetupRun, revalidator, setupStatus]);
+  }, [brandData, didRevalidateAfterSetup, latestSetupRun, revalidator, setupStatus]);
+
+  useEffect(() => {
+    setBrandData(brand);
+  }, [brand]);
+
+  useEffect(() => {
+    if (refreshBrandFetcher.data?.brand) {
+      setBrandData(refreshBrandFetcher.data.brand);
+    }
+  }, [refreshBrandFetcher.data]);
 
   return (
     <div className="space-y-6">
@@ -259,35 +347,78 @@ export default function ProjectDetailsRoute() {
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle>Brand profile</CardTitle>
-            <CardDescription>Visual brand context extracted during setup.</CardDescription>
+          <CardHeader className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle>Brand profile</CardTitle>
+              <CardDescription>Visual brand context extracted during setup.</CardDescription>
+            </div>
+            <refreshBrandFetcher.Form method="post">
+              <input type="hidden" name="intent" value="refreshBrandData" />
+              <input type="hidden" name="max_pages" value="10" />
+              <input type="hidden" name="additional_context" value="" />
+              <input type="hidden" name="clear_suggested_icp_niches" value="true" />
+              <Button type="submit" variant="outline" size="sm" disabled={isRefreshingBrand}>
+                {isRefreshingBrand ? "Refreshing..." : "Refresh Brand Data"}
+              </Button>
+            </refreshBrandFetcher.Form>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {brand ? (
+            {refreshBrandFetcher.data?.error ? (
+              <p className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                {refreshBrandFetcher.data.error}
+              </p>
+            ) : null}
+
+            {brandData ? (
               <>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs font-semibold uppercase text-slate-500">Company</p>
-                    <p className="font-semibold text-slate-900">{brand.company_name ?? "Unknown"}</p>
+                    <p className="font-semibold text-slate-900">{brandData.company_name ?? "Unknown"}</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs font-semibold uppercase text-slate-500">Brand assets</p>
-                    <p className="font-semibold text-slate-900">{brand.brand_assets?.length ?? 0}</p>
+                    <p className="font-semibold text-slate-900">{brandData.brand_assets?.length ?? 0}</p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs font-semibold uppercase text-slate-500">Extraction confidence</p>
                     <p className="font-semibold text-slate-900">
-                      {brand.visual_extraction_confidence === null || brand.visual_extraction_confidence === undefined
+                      {brandData.visual_extraction_confidence === null || brandData.visual_extraction_confidence === undefined
                         ? "Unknown"
-                        : `${Math.round(brand.visual_extraction_confidence * 100)}%`}
+                        : `${Math.round(brandData.visual_extraction_confidence * 100)}%`}
                     </p>
                   </div>
                   <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <p className="text-xs font-semibold uppercase text-slate-500">Last sync</p>
-                    <p className="font-semibold text-slate-900">{formatDateTime(brand.visual_last_synced_at ?? null)}</p>
+                    <p className="font-semibold text-slate-900">{formatDateTime(brandData.visual_last_synced_at ?? null)}</p>
                   </div>
                 </div>
+
+                {(refreshMetadata.refreshedAt ||
+                  refreshMetadata.extractionAttempts !== null ||
+                  refreshMetadata.extractionWarnings.length > 0) && (
+                  <div className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Latest refresh</p>
+                    <p className="text-slate-800">
+                      <span className="font-semibold text-slate-900">Refreshed at:</span>{" "}
+                      {formatDateTime(refreshMetadata.refreshedAt)}
+                    </p>
+                    <p className="text-slate-800">
+                      <span className="font-semibold text-slate-900">Extraction attempts:</span>{" "}
+                      {refreshMetadata.extractionAttempts ?? "Unknown"}
+                    </p>
+                    {refreshMetadata.extractionWarnings.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="font-semibold text-slate-900">Extraction warnings:</p>
+                        <ul className="list-disc space-y-1 pl-5 text-slate-700">
+                          {refreshMetadata.extractionWarnings.map((warning, index) => (
+                            <li key={`${warning}-${index}`}>{warning}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
 
                 <div>
                   <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Asset roles</p>

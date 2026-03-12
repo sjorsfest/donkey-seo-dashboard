@@ -983,6 +983,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/brand/{project_id}/refresh-scrape": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Refresh brand profile from live scrape
+         * @description Re-scrape project domain and refresh extractor-driven brand fields.
+         */
+        post: operations["refresh_brand_scrape_api_v1_brand__project_id__refresh_scrape_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/brand/{project_id}/assets/ingest": {
         parameters: {
             query?: never;
@@ -1599,6 +1619,76 @@ export interface components {
             target_audience?: string | null;
             /** Core Benefits */
             core_benefits?: string[];
+        };
+        /**
+         * BrandScrapeRefreshRequest
+         * @description Request payload for re-scraping and refreshing extracted brand fields.
+         */
+        BrandScrapeRefreshRequest: {
+            /**
+             * Max Pages
+             * @description Maximum number of pages to scrape from the project domain.
+             * @default 10
+             */
+            max_pages: number;
+            /**
+             * Additional Context
+             * @description Optional context appended to the BrandExtractorAgent prompt.
+             */
+            additional_context?: string | null;
+            /**
+             * Clear Suggested Icp Niches
+             * @description Reset suggested ICP niches while refreshing extractor-driven fields.
+             * @default true
+             */
+            clear_suggested_icp_niches: boolean;
+        };
+        /**
+         * BrandScrapeRefreshResponse
+         * @description Response payload for a scrape + extractor refresh operation.
+         */
+        BrandScrapeRefreshResponse: {
+            /** Project Id */
+            project_id: string;
+            /** Company Name */
+            company_name?: string | null;
+            /** Tagline */
+            tagline?: string | null;
+            /** Products Services */
+            products_services?: components["schemas"]["BrandProductServiceMetadata"][];
+            /** Target Roles */
+            target_roles?: string[];
+            /** Target Industries */
+            target_industries?: string[];
+            /** Differentiators */
+            differentiators?: string[];
+            /** Suggested Icp Niches */
+            suggested_icp_niches?: components["schemas"]["BrandSuggestedICPNiche"][];
+            /** Extraction Confidence */
+            extraction_confidence?: number | null;
+            /** Brand Assets */
+            brand_assets?: components["schemas"]["BrandAssetMetadata"][];
+            /** Visual Style Guide */
+            visual_style_guide?: {
+                [key: string]: unknown;
+            };
+            /** Visual Prompt Contract */
+            visual_prompt_contract?: {
+                [key: string]: unknown;
+            };
+            /** Visual Extraction Confidence */
+            visual_extraction_confidence?: number | null;
+            /** Visual Last Synced At */
+            visual_last_synced_at?: string | null;
+            /** Extraction Attempts */
+            extraction_attempts: number;
+            /** Extraction Warnings */
+            extraction_warnings?: string[];
+            /**
+             * Refreshed At
+             * Format: date-time
+             */
+            refreshed_at: string;
         };
         /**
          * BrandSuggestedICPNiche
@@ -5538,6 +5628,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrandVisualContextResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_brand_scrape_api_v1_brand__project_id__refresh_scrape_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrandScrapeRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrandScrapeRefreshResponse"];
                 };
             };
             /** @description Validation Error */
